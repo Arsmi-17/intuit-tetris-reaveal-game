@@ -10,7 +10,7 @@ function App() {
   const [screen, setScreen] = useState<ScreenType>('start');
   const [config, setConfig] = useState<GameConfig | null>(null);
   const [completedState, setCompletedState] = useState<GameState | null>(null);
-  const [theme, setTheme] = useState<ThemeMode>('light');
+  const [theme, setTheme] = useState<ThemeMode>('dark');
   const [showHint, setShowHint] = useState(true);
 
   const engine = useGameEngine(screen === 'playing' ? config : null);

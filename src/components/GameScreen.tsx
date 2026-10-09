@@ -14,8 +14,7 @@ import {
 import type { GameConfig, GameState } from '@/types';
 import type { ThemeMode } from '@/types';
 import { GameBoard } from './GameBoard';
-import { PieceTile } from './PieceTile';
-import { getBounds, SPAWN_ROWS } from '@/gameLogic';
+import { SPAWN_ROWS } from '@/gameLogic';
 
 interface GameScreenProps {
   config: GameConfig;
@@ -56,7 +55,6 @@ export function GameScreen({
 }: GameScreenProps) {
   const isDark = theme === 'dark';
   const { cols, rows } = config.difficulty;
-  const imageUrl = config.image.url;
 
   const cellSize = useMemo(() => {
     const maxBoardWidth = Math.min(
@@ -64,7 +62,7 @@ export function GameScreen({
       600,
     );
     const maxBoardHeight = Math.min(
-      typeof window !== 'undefined' ? window.innerHeight - 220 : 600,
+      typeof window !== 'undefined' ? window.innerHeight - 168 : 600,
       600,
     );
     const sizeByWidth = Math.floor(maxBoardWidth / cols);
@@ -72,16 +70,12 @@ export function GameScreen({
     return Math.min(sizeByWidth, sizeByHeight, 64);
   }, [cols, rows]);
 
-  const nextPiece = state.nextPieces[0] ?? null;
-  const nextTiles = nextPiece ? state.partitions.get(nextPiece.id) ?? [] : [];
-  const nextBounds = nextPiece ? getBounds(nextPiece.cells) : { width: 0, height: 0 };
-
   const btnBase =
     'flex items-center justify-center rounded-xl transition-all duration-150 active:scale-90 font-medium';
 
   return (
     <div
-      className={`min-h-screen flex flex-col ${
+      className={`min-h-[100dvh] flex flex-col overflow-hidden ${
         isDark
           ? 'bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800'
           : 'bg-gradient-to-br from-sky-50 via-white to-cyan-50'
@@ -142,67 +136,9 @@ export function GameScreen({
         </div>
       </div>
 
-      <div className="flex-1 relative overflow-auto p-4">
+      <div className="flex-1 relative overflow-auto p-4 pb-28">
         <div className="min-h-full flex items-center justify-center">
-          <div className="relative flex flex-col items-center gap-4">
-            <div className="hidden xl:flex absolute right-full top-0 mr-4 flex-col gap-4 w-48">
-              <div
-                className={`p-4 rounded-xl ring-1 shadow-sm ${
-                  isDark ? 'bg-slate-800/70 ring-slate-700/60' : 'bg-white/75 ring-slate-200'
-                }`}
-              >
-                <h3 className={`text-xs font-semibold uppercase tracking-wide mb-3 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Next Piece</h3>
-                {nextPiece && nextTiles.length > 0 ? (
-                  <div
-                    className={`relative mx-auto rounded-lg overflow-hidden ${
-                      isDark ? 'bg-slate-900/60' : 'bg-slate-100'
-                    }`}
-                    style={{
-                      width: nextBounds.width * 28,
-                      height: nextBounds.height * 28,
-                    }}
-                  >
-                    {nextPiece.cells.map((cell, i) => (
-                      <div
-                        key={i}
-                        className="absolute"
-                        style={{
-                          left: cell.x * 28,
-                          top: cell.y * 28,
-                          width: 28,
-                          height: 28,
-                        }}
-                      >
-                        <PieceTile
-                          tile={nextTiles[i]}
-                          imageUrl={imageUrl}
-                          bgSize={`${nextBounds.width * 28}px ${nextBounds.height * 28}px`}
-                          isFalling
-                          className="w-full h-full"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center text-slate-500 text-sm py-4">No more pieces</div>
-                )}
-              </div>
-
-              <div
-                className={`p-4 rounded-xl ring-1 shadow-sm ${
-                  isDark ? 'bg-slate-800/70 ring-slate-700/60' : 'bg-white/75 ring-slate-200'
-                }`}
-              >
-                <h3 className={`text-xs font-semibold uppercase tracking-wide mb-3 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Reference</h3>
-                <img
-                  src={imageUrl}
-                  alt="Puzzle reference"
-                  className={`w-full rounded-lg ring-1 ${isDark ? 'ring-slate-600/50' : 'ring-slate-200'}`}
-                  draggable={false}
-                />
-              </div>
-            </div>
-
+          <div className="relative flex flex-col items-center">
             <GameBoard
               state={state}
               config={config}
@@ -210,57 +146,19 @@ export function GameScreen({
               theme={theme}
               showHint={showHint}
             />
-
-            <div className="xl:hidden flex items-center gap-3">
-              <span className={`text-xs font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Next:</span>
-              {nextPiece && nextTiles.length > 0 ? (
-                <div
-                  className={`relative rounded-lg overflow-hidden ring-1 ${
-                    isDark ? 'bg-slate-900/60 ring-slate-700' : 'bg-white ring-slate-200'
-                  }`}
-                  style={{
-                    width: nextBounds.width * 20,
-                    height: nextBounds.height * 20,
-                  }}
-                >
-                  {nextPiece.cells.map((cell, i) => (
-                    <div
-                      key={i}
-                      className="absolute"
-                      style={{
-                        left: cell.x * 20,
-                        top: cell.y * 20,
-                        width: 20,
-                        height: 20,
-                      }}
-                    >
-                      <PieceTile
-                        tile={nextTiles[i]}
-                        imageUrl={imageUrl}
-                        bgSize={`${nextBounds.width * 20}px ${nextBounds.height * 20}px`}
-                        isFalling
-                        className="w-full h-full"
-                      />
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <span className="text-slate-500 text-xs">-</span>
-              )}
-            </div>
           </div>
         </div>
       </div>
 
       <div
-        className={`px-4 pb-4 pt-2 backdrop-blur-sm border-t ${
+        className={`fixed inset-x-0 bottom-0 z-30 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur-sm border-t ${
           isDark ? 'bg-slate-900/80 border-slate-700/70' : 'bg-white/85 border-slate-200/80'
         }`}
       >
         <div className="flex items-center justify-center gap-2 sm:gap-3 max-w-md mx-auto">
           <button
             onClick={onMoveLeft}
-            className={`${btnBase} w-14 h-14 ring-1 shadow-sm ${
+            className={`${btnBase} h-12 w-12 sm:h-14 sm:w-14 ring-1 shadow-sm ${
               isDark
                 ? 'bg-slate-800 hover:bg-slate-700 ring-slate-600/50 text-white'
                 : 'bg-white hover:bg-slate-100 ring-slate-300 text-slate-700'
@@ -272,7 +170,7 @@ export function GameScreen({
 
           <button
             onClick={onHardDrop}
-            className={`${btnBase} w-14 h-14 bg-emerald-500 hover:bg-emerald-400 ring-1 ring-emerald-300 text-white shadow-sm`}
+            className={`${btnBase} h-12 w-12 sm:h-14 sm:w-14 bg-emerald-500 hover:bg-emerald-400 ring-1 ring-emerald-300 text-white shadow-sm`}
             aria-label="Hard drop"
           >
             <ChevronsDown className="w-6 h-6" />
@@ -280,7 +178,7 @@ export function GameScreen({
 
           <button
             onClick={onMoveDown}
-            className={`${btnBase} w-14 h-14 ring-1 shadow-sm ${
+            className={`${btnBase} h-12 w-12 sm:h-14 sm:w-14 ring-1 shadow-sm ${
               isDark
                 ? 'bg-slate-800 hover:bg-slate-700 ring-slate-600/50 text-white'
                 : 'bg-white hover:bg-slate-100 ring-slate-300 text-slate-700'
@@ -292,7 +190,7 @@ export function GameScreen({
 
           <button
             onClick={onMoveRight}
-            className={`${btnBase} w-14 h-14 ring-1 shadow-sm ${
+            className={`${btnBase} h-12 w-12 sm:h-14 sm:w-14 ring-1 shadow-sm ${
               isDark
                 ? 'bg-slate-800 hover:bg-slate-700 ring-slate-600/50 text-white'
                 : 'bg-white hover:bg-slate-100 ring-slate-300 text-slate-700'

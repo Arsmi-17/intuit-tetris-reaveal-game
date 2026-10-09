@@ -82,45 +82,28 @@ export function WinScreen({ config, state, theme, onPlayAgain, onHome }: WinScre
     if (!posterBlob || isSharing) return;
 
     setIsSharing(true);
-    setShareStatus('Preparing Slack share...');
-
-    const file = new File([posterBlob], `tetris-poster-${time.replace(':', '-')}.png`, {
-      type: 'image/png',
-    });
+    setShareStatus('Opening Slack...');
 
     try {
-      if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: 'Tetris finish poster',
-          text: `${FINISH_MESSAGE} - ${time}`,
-        });
-        setShareStatus('Poster shared');
-      } else if ('ClipboardItem' in window && navigator.clipboard?.write) {
+      if ('ClipboardItem' in window && navigator.clipboard?.write) {
         await navigator.clipboard.write([
           new ClipboardItem({
             [posterBlob.type]: posterBlob,
           }),
         ]);
-        window.open(SLACK_CHANNEL_URL, '_blank', 'noopener,noreferrer');
         setShareStatus('Poster copied. Paste it in Slack.');
       } else {
         downloadPoster(posterBlob);
-        window.open(SLACK_CHANNEL_URL, '_blank', 'noopener,noreferrer');
         setShareStatus('Poster downloaded. Upload it in Slack.');
       }
-    } catch (error) {
-      if ((error as DOMException).name === 'AbortError') {
-        setShareStatus('Share cancelled');
-      } else {
-        downloadPoster(posterBlob);
-        window.open(SLACK_CHANNEL_URL, '_blank', 'noopener,noreferrer');
-        setShareStatus('Poster saved. Slack opened.');
-      }
+    } catch {
+      downloadPoster(posterBlob);
+      setShareStatus('Poster saved. Slack opened.');
     } finally {
+      window.location.href = SLACK_CHANNEL_URL;
       setIsSharing(false);
     }
-  }, [downloadPoster, isSharing, posterBlob, time]);
+  }, [downloadPoster, isSharing, posterBlob]);
 
   return (
     <div

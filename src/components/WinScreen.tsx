@@ -17,19 +17,6 @@ function formatTime(seconds: number): string {
 
 const HEADLINE = 'The Next level?';
 const SUBHEAD = ['That’s going to be', 'game-changing.'];
-/**
- * Desktop browsers expose navigator.share too, but there it opens the OS share
- * sheet (Nearby Sharing, Paint, Outlook...) which is not what we want: on a
- * laptop the poster should land in Slack. Only phones and tablets, where the
- * sheet lists the real Slack app, take that path.
- */
-function isHandheld(): boolean {
-  const uaData = (navigator as Navigator & { userAgentData?: { mobile?: boolean } })
-    .userAgentData;
-  if (typeof uaData?.mobile === 'boolean') return uaData.mobile;
-  return window.matchMedia('(pointer: coarse)').matches && navigator.maxTouchPoints > 0;
-}
-
 const SLACK_CHANNEL_URL =
   'https://intuit.enterprise.slack.com/?redir=%2Farchives%2FC0BHTGZSKDZ%3Fname%3DC0BHTGZSKDZ';
 
@@ -95,6 +82,20 @@ export function WinScreen({ config, state }: WinScreenProps) {
     [posterFileName],
   );
 
+  /**
+   * A new tab keeps the poster page alive behind Slack. Popup blockers can
+   * refuse it after an await, so fall back to navigating this tab.
+   */
+  const openSlack = useCallback(() => {
+    const opened = window.open(SLACK_CHANNEL_URL, '_blank');
+    if (!opened) window.location.href = SLACK_CHANNEL_URL;
+  }, []);
+
+  /**
+   * Every device goes to the Slack channel. We deliberately do NOT use
+   * navigator.share: it opens the OS share sheet (WhatsApp, Instagram, Nearby
+   * Sharing...) and the poster belongs in one place.
+   */
   const sharePoster = useCallback(async () => {
     if (!posterBlob || isSharing) return;
     setIsSharing(true);
@@ -102,47 +103,23 @@ export function WinScreen({ config, state }: WinScreenProps) {
     // Fire-and-forget: logging must never delay or block the share.
     void logShareEvent({ completionSeconds: state.elapsed, completionDisplay: time });
 
-    const file = new File([posterBlob], posterFileName, { type: 'image/png' });
-
-    // Phones and tablets: the share sheet hands the PNG straight to the Slack
-    // app as a real attachment.
-    if (isHandheld() && navigator.canShare?.({ files: [file] })) {
-      try {
-        await navigator.share({
-          files: [file],
-          title: 'Into The Next',
-          text: `Finished in ${time}.`,
-        });
-        setShareStatus('Poster shared.');
-        setIsSharing(false);
-        return;
-      } catch (error) {
-        // The user dismissing the sheet is not a failure worth falling back on.
-        if (error instanceof DOMException && error.name === 'AbortError') {
-          setShareStatus('');
-          setIsSharing(false);
-          return;
-        }
-      }
-    }
-
-    // Laptops and desktops: copy the poster, then go straight to the channel.
+    // Leave the poster somewhere it can be attached from, then open Slack.
     try {
       if ('ClipboardItem' in window && navigator.clipboard?.write) {
         await navigator.clipboard.write([new ClipboardItem({ 'image/png': posterBlob })]);
         setShareStatus('Poster copied. Paste it in Slack.');
       } else {
         downloadPoster(posterBlob);
-        setShareStatus('Poster downloaded. Attach it in Slack.');
+        setShareStatus('Poster saved. Attach it in Slack.');
       }
     } catch {
       downloadPoster(posterBlob);
-      setShareStatus('Poster downloaded. Attach it in Slack.');
+      setShareStatus('Poster saved. Attach it in Slack.');
     }
 
-    window.open(SLACK_CHANNEL_URL, '_blank', 'noopener');
+    openSlack();
     setIsSharing(false);
-  }, [downloadPoster, isSharing, posterBlob, posterFileName, state.elapsed, time]);
+  }, [downloadPoster, isSharing, openSlack, posterBlob, state.elapsed, time]);
 
   return (
     <div className="relative min-h-[100dvh] w-full">

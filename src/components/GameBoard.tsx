@@ -1,5 +1,5 @@
 import type { GameState, GameConfig } from '@/types';
-import { getBoardImageOpacity, toCssOpacity } from '@/boardOpacity';
+import { DEFAULT_BOARD_IMAGE_OPACITY, toCssOpacity } from '@/boardOpacity';
 import { PieceTile } from './PieceTile';
 import { SPAWN_ROWS } from '@/gameLogic';
 
@@ -68,7 +68,7 @@ export function GameBoard({ state, config, cellSize }: GameBoardProps) {
           aria-hidden="true"
           draggable={false}
           className="pointer-events-none absolute inset-0 h-full w-full select-none object-fill"
-          style={{ opacity: toCssOpacity(getBoardImageOpacity()) }}
+          style={{ opacity: toCssOpacity(DEFAULT_BOARD_IMAGE_OPACITY) }}
         />
 
         <div

@@ -1,14 +1,10 @@
-import { useEffect, useState } from 'react';
-import { Check, RotateCcw } from 'lucide-react';
+import { useState } from 'react';
 import { PUZZLE_IMAGES, DIFFICULTIES } from '@/gameLogic';
 import {
   DEFAULT_BOARD_IMAGE_OPACITY,
   MAX_BOARD_IMAGE_OPACITY,
   MIN_BOARD_IMAGE_OPACITY,
   clampOpacity,
-  getBoardImageOpacity,
-  resetBoardImageOpacity,
-  setBoardImageOpacity,
   toCssOpacity,
 } from '@/boardOpacity';
 
@@ -19,35 +15,19 @@ const { cols, rows } = DIFFICULTIES.hard;
 const PREVIEW_IMAGE = PUZZLE_IMAGES[0];
 
 /**
- * A tuning page for how strongly the finished picture shows through the empty
- * board. Values are entered as whole percentages; the saved value takes effect
- * in the game immediately.
+ * Preview-only tool for judging how strongly the finished picture should show
+ * through the empty board. Nothing here changes the game: the value that ships
+ * is DEFAULT_BOARD_IMAGE_OPACITY in src/boardOpacity.ts.
  */
 export function OpacityScreen() {
   // `draft` is what is typed (may be empty mid-edit); `percent` is what renders.
-  const [percent, setPercent] = useState(() => getBoardImageOpacity());
-  const [draft, setDraft] = useState(() => String(getBoardImageOpacity()));
-  const [saved, setSaved] = useState(false);
+  const [percent, setPercent] = useState(DEFAULT_BOARD_IMAGE_OPACITY);
+  const [draft, setDraft] = useState(String(DEFAULT_BOARD_IMAGE_OPACITY));
 
-  useEffect(() => {
-    if (!saved) return;
-    const timer = window.setTimeout(() => setSaved(false), 1600);
-    return () => window.clearTimeout(timer);
-  }, [saved]);
-
-  const apply = (value: number) => {
+  const preview = (value: number) => {
     const next = clampOpacity(value);
     setPercent(next);
     setDraft(String(next));
-    setBoardImageOpacity(next);
-    setSaved(true);
-  };
-
-  const handleReset = () => {
-    resetBoardImageOpacity();
-    setPercent(DEFAULT_BOARD_IMAGE_OPACITY);
-    setDraft(String(DEFAULT_BOARD_IMAGE_OPACITY));
-    setSaved(true);
   };
 
   return (
@@ -61,8 +41,8 @@ export function OpacityScreen() {
             Board image <span className="text-brand-blue">opacity</span>
           </h1>
           <p className="mt-2 text-brand-body">
-            How strongly the finished picture shows through the empty board.
-            Enter a whole percentage &mdash; 10, 15, 20.
+            Preview only &mdash; how strongly the finished picture shows through
+            the empty board.
           </p>
         </header>
 
@@ -110,34 +90,22 @@ export function OpacityScreen() {
               Opacity (%)
             </label>
 
-            <div className="mt-2 flex gap-3">
-              <input
-                id="opacity-input"
-                type="number"
-                inputMode="numeric"
-                min={MIN_BOARD_IMAGE_OPACITY}
-                max={MAX_BOARD_IMAGE_OPACITY}
-                step={1}
-                value={draft}
-                onChange={(e) => {
-                  setDraft(e.target.value);
-                  // Keep the preview live while typing, but ignore an empty box.
-                  if (e.target.value !== '') setPercent(clampOpacity(Number(e.target.value)));
-                }}
-                onBlur={() => apply(draft === '' ? DEFAULT_BOARD_IMAGE_OPACITY : Number(draft))}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') apply(draft === '' ? DEFAULT_BOARD_IMAGE_OPACITY : Number(draft));
-                }}
-                className="w-28 rounded-xl bg-white px-4 py-3 font-display text-2xl font-bold tabular-nums text-brand-ink shadow-card outline-none ring-brand-blue focus:ring-2"
-              />
-
-              <button
-                onClick={() => apply(Number(draft))}
-                className="flex-1 rounded-xl bg-brand-blue px-6 py-3 font-medium text-white shadow-cta transition hover:bg-brand-blue-dark active:scale-[0.98]"
-              >
-                Save
-              </button>
-            </div>
+            <input
+              id="opacity-input"
+              type="number"
+              inputMode="numeric"
+              min={MIN_BOARD_IMAGE_OPACITY}
+              max={MAX_BOARD_IMAGE_OPACITY}
+              step={1}
+              value={draft}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                // Keep the preview live while typing, but ignore an empty box.
+                if (e.target.value !== '') setPercent(clampOpacity(Number(e.target.value)));
+              }}
+              onBlur={() => preview(draft === '' ? DEFAULT_BOARD_IMAGE_OPACITY : Number(draft))}
+              className="mt-2 w-28 rounded-xl bg-white px-4 py-3 font-display text-2xl font-bold tabular-nums text-brand-ink shadow-card outline-none ring-brand-blue focus:ring-2"
+            />
 
             <input
               type="range"
@@ -146,13 +114,7 @@ export function OpacityScreen() {
               max={MAX_BOARD_IMAGE_OPACITY}
               step={1}
               value={percent}
-              onChange={(e) => {
-                setPercent(Number(e.target.value));
-                setDraft(e.target.value);
-              }}
-              onMouseUp={() => apply(percent)}
-              onTouchEnd={() => apply(percent)}
-              onKeyUp={() => apply(percent)}
+              onChange={(e) => preview(Number(e.target.value))}
               className="mt-5 w-full accent-brand-blue"
             />
 
@@ -160,7 +122,7 @@ export function OpacityScreen() {
               {PRESETS.map((value) => (
                 <button
                   key={value}
-                  onClick={() => apply(value)}
+                  onClick={() => preview(value)}
                   className={`rounded-full px-4 py-2 text-sm font-medium shadow-card transition active:scale-95 ${
                     percent === value
                       ? 'bg-brand-blue text-white'
@@ -170,42 +132,6 @@ export function OpacityScreen() {
                   {value}%
                 </button>
               ))}
-            </div>
-
-            <div className="mt-6 flex items-center gap-4">
-              <button
-                onClick={handleReset}
-                className="inline-flex items-center gap-2 text-sm font-medium text-brand-muted transition hover:text-brand-ink"
-              >
-                <RotateCcw className="h-4 w-4" />
-                Reset to default ({DEFAULT_BOARD_IMAGE_OPACITY}%)
-              </button>
-
-              <span
-                className={`inline-flex items-center gap-1.5 text-sm font-medium text-brand-blue transition-opacity ${
-                  saved ? 'opacity-100' : 'opacity-0'
-                }`}
-                role="status"
-                aria-live="polite"
-              >
-                <Check className="h-4 w-4" />
-                Saved
-              </span>
-            </div>
-
-            <div className="mt-8 rounded-2xl bg-white/70 p-5 text-sm leading-relaxed text-brand-body shadow-card">
-              <p>
-                Saving stores the value in this browser and the game picks it up
-                straight away.
-              </p>
-              <p className="mt-3">
-                To change it for <strong>everyone</strong>, set{' '}
-                <code className="rounded bg-brand-sky px-1.5 py-0.5 text-brand-ink">
-                  DEFAULT_BOARD_IMAGE_OPACITY = {percent}
-                </code>{' '}
-                in <code className="text-brand-ink">src/boardOpacity.ts</code> and
-                redeploy.
-              </p>
             </div>
 
             <a

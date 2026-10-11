@@ -191,7 +191,7 @@ export function WinScreen({ config, state }: WinScreenProps) {
           </button>
 
           <p className="mt-[clamp(0.5rem,1.6vh,1.25rem)] text-center text-[clamp(0.75rem,1.7vh,0.875rem)] text-brand-body">
-            First 50 to complete and share earn rewards.
+            First 50 to complete and share earn Buzzbox points.
           </p>
 
           <div

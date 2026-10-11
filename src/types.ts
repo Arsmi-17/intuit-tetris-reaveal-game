@@ -90,9 +90,6 @@ export interface ImageOption {
 /** All screens in the game. */
 export type GameScreen = 'start' | 'playing' | 'won';
 
-/** Visual theme for the game shell. */
-export type ThemeMode = 'light' | 'dark';
-
 /** Full game configuration chosen on the start screen. */
 export interface GameConfig {
   image: ImageOption;
@@ -125,6 +122,12 @@ export interface GameState {
   placedCount: number;
   /** Whether the current piece is in a temporary "wrong" flash state. */
   wrongFlash: boolean;
+  /**
+   * A piece that was just rejected, held purely for the blink-out animation.
+   * It is not controllable and the engine never moves it — it is cleared when
+   * the flash timer fires and the retry piece spawns.
+   */
+  rejectedPiece: Piece | null;
   /** Elapsed time in seconds. */
   elapsed: number;
 }

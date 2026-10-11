@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Clock, Home, RotateCcw, Share2 } from 'lucide-react';
-import type { GameConfig, GameState, ThemeMode } from '@/types';
+import { Share } from 'lucide-react';
+import type { GameConfig, GameState } from '@/types';
 import { generateFinishPoster } from '@/poster';
+import { logShareEvent } from '@/shareLog';
 
 interface WinScreenProps {
   config: GameConfig;
   state: GameState;
-  theme: ThemeMode;
-  onPlayAgain: () => void;
-  onHome: () => void;
 }
 
 function formatTime(seconds: number): string {
@@ -17,17 +15,30 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-const FINISH_MESSAGE = 'Some Message';
+const HEADLINE = 'The Next level?';
+const SUBHEAD = ['That’s going to be', 'game-changing.'];
+/**
+ * Desktop browsers expose navigator.share too, but there it opens the OS share
+ * sheet (Nearby Sharing, Paint, Outlook...) which is not what we want: on a
+ * laptop the poster should land in Slack. Only phones and tablets, where the
+ * sheet lists the real Slack app, take that path.
+ */
+function isHandheld(): boolean {
+  const uaData = (navigator as Navigator & { userAgentData?: { mobile?: boolean } })
+    .userAgentData;
+  if (typeof uaData?.mobile === 'boolean') return uaData.mobile;
+  return window.matchMedia('(pointer: coarse)').matches && navigator.maxTouchPoints > 0;
+}
+
 const SLACK_CHANNEL_URL =
   'https://intuit.enterprise.slack.com/?redir=%2Farchives%2FC0BHTGZSKDZ%3Fname%3DC0BHTGZSKDZ';
 
-export function WinScreen({ config, state, theme, onPlayAgain, onHome }: WinScreenProps) {
+export function WinScreen({ config, state }: WinScreenProps) {
   const [revealed, setRevealed] = useState(false);
   const [posterBlob, setPosterBlob] = useState<Blob | null>(null);
   const [posterUrl, setPosterUrl] = useState<string | null>(null);
   const [shareStatus, setShareStatus] = useState('');
   const [isSharing, setIsSharing] = useState(false);
-  const isDark = theme === 'dark';
   const time = formatTime(state.elapsed);
 
   useEffect(() => {
@@ -46,15 +57,16 @@ export function WinScreen({ config, state, theme, onPlayAgain, onHome }: WinScre
     generateFinishPoster({
       imageUrl: config.image.url,
       imageLabel: config.image.label,
-      message: FINISH_MESSAGE,
       time,
+      headline: HEADLINE,
+      subhead: SUBHEAD,
     })
       .then((blob) => {
         if (!active) return;
         objectUrl = URL.createObjectURL(blob);
         setPosterBlob(blob);
         setPosterUrl(objectUrl);
-        setShareStatus('Poster ready');
+        setShareStatus('');
       })
       .catch((error) => {
         if (!active) return;
@@ -67,136 +79,137 @@ export function WinScreen({ config, state, theme, onPlayAgain, onHome }: WinScre
     };
   }, [config.image.label, config.image.url, time]);
 
-  const downloadPoster = useCallback((blob: Blob) => {
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `tetris-poster-${time.replace(':', '-')}.png`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, [time]);
+  const posterFileName = `into-the-next-${time.replace(':', '-')}.png`;
+
+  const downloadPoster = useCallback(
+    (blob: Blob) => {
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = posterFileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    },
+    [posterFileName],
+  );
 
   const sharePoster = useCallback(async () => {
     if (!posterBlob || isSharing) return;
-
     setIsSharing(true);
-    setShareStatus('Opening Slack...');
 
+    // Fire-and-forget: logging must never delay or block the share.
+    void logShareEvent({ completionSeconds: state.elapsed, completionDisplay: time });
+
+    const file = new File([posterBlob], posterFileName, { type: 'image/png' });
+
+    // Phones and tablets: the share sheet hands the PNG straight to the Slack
+    // app as a real attachment.
+    if (isHandheld() && navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({
+          files: [file],
+          title: 'Into The Next',
+          text: `Finished in ${time}.`,
+        });
+        setShareStatus('Poster shared.');
+        setIsSharing(false);
+        return;
+      } catch (error) {
+        // The user dismissing the sheet is not a failure worth falling back on.
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          setShareStatus('');
+          setIsSharing(false);
+          return;
+        }
+      }
+    }
+
+    // Laptops and desktops: copy the poster, then go straight to the channel.
     try {
       if ('ClipboardItem' in window && navigator.clipboard?.write) {
-        await navigator.clipboard.write([
-          new ClipboardItem({
-            [posterBlob.type]: posterBlob,
-          }),
-        ]);
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': posterBlob })]);
         setShareStatus('Poster copied. Paste it in Slack.');
       } else {
         downloadPoster(posterBlob);
-        setShareStatus('Poster downloaded. Upload it in Slack.');
+        setShareStatus('Poster downloaded. Attach it in Slack.');
       }
     } catch {
       downloadPoster(posterBlob);
-      setShareStatus('Poster saved. Slack opened.');
-    } finally {
-      window.location.href = SLACK_CHANNEL_URL;
-      setIsSharing(false);
+      setShareStatus('Poster downloaded. Attach it in Slack.');
     }
-  }, [downloadPoster, isSharing, posterBlob]);
+
+    window.open(SLACK_CHANNEL_URL, '_blank', 'noopener');
+    setIsSharing(false);
+  }, [downloadPoster, isSharing, posterBlob, posterFileName, state.elapsed, time]);
 
   return (
-    <div
-      className={`min-h-screen flex flex-col items-center justify-center gap-5 p-4 sm:p-6 ${
-        isDark
-          ? 'bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800'
-          : 'bg-gradient-to-br from-sky-50 via-white to-cyan-50'
-      }`}
-    >
-      <div
-        className={`relative w-full max-w-[min(92vw,78vh,680px)] aspect-square overflow-hidden bg-slate-950 shadow-[0_32px_90px_rgba(0,0,0,0.45)] transition-all duration-700 ${
-          revealed ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
-        }`}
-      >
-        <img
-          src={config.image.url}
-          alt={config.image.label}
-          className="absolute inset-0 h-full w-full object-fill"
-          draggable={false}
-        />
+    <div className="relative min-h-[100dvh] w-full">
+      <div className="brand-backdrop" aria-hidden="true" />
 
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.08)_0%,rgba(15,23,42,0.12)_42%,rgba(15,23,42,0.82)_100%)]" />
-        <div className="absolute inset-5 border border-white/45" />
-        <div className="absolute inset-[30px] border border-cyan-200/30" />
-
-        <div className="absolute left-0 right-0 top-0 flex items-start p-8 sm:p-10">
-          <div className="h-1.5 w-20 bg-cyan-300 shadow-[0_0_24px_rgba(103,232,249,0.85)]" />
-        </div>
-
-        <div className="absolute inset-x-0 bottom-0 p-8 sm:p-10">
-          <h1 className="max-w-[11ch] text-5xl sm:text-7xl font-black leading-[0.86] tracking-normal text-white drop-shadow-[0_8px_24px_rgba(0,0,0,0.45)]">
-            {FINISH_MESSAGE}
-          </h1>
-
-          <div className="mt-6 flex items-end justify-between gap-5">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 text-cyan-100">
-                <Clock className="h-5 w-5" />
-                <span className="text-xs font-semibold uppercase tracking-[0.28em]">
-                  Time
-                </span>
-              </div>
-              <div className="mt-1 text-5xl sm:text-6xl font-black tabular-nums leading-none text-cyan-50 drop-shadow-[0_6px_18px_rgba(8,145,178,0.45)]">
-                {formatTime(state.elapsed)}
-              </div>
-            </div>
-
+      <div className="relative z-10 mx-auto flex h-[100dvh] w-full max-w-md flex-col items-center overflow-hidden px-5 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-[clamp(1rem,3vh,2.5rem)] text-center lg:h-auto lg:min-h-[100dvh] lg:max-w-5xl lg:grid lg:grid-cols-2 lg:items-center lg:gap-14 lg:overflow-visible lg:py-12 lg:text-left">
+        {/* ---- The poster itself. Long-press / right-click saves this PNG. ---- */}
+        <div className="order-2 flex min-h-0 w-full flex-1 items-center justify-center lg:order-1 lg:row-span-2 lg:block lg:flex-none">
+          <div
+            className={`mx-auto w-full max-w-sm transition-all duration-700 lg:max-w-none ${
+              revealed ? 'scale-100 opacity-100' : 'scale-95 opacity-0'
+            }`}
+            style={{ maxHeight: '100%' }}
+          >
+            {posterUrl ? (
+              <img
+                src={posterUrl}
+                alt={`Finish poster — completed in ${time}`}
+                className="poster-image mx-auto max-h-full w-auto max-w-full rounded-2xl object-contain shadow-card"
+              />
+            ) : (
+              <div className="aspect-square w-full animate-pulse rounded-2xl bg-white/50" />
+            )}
           </div>
         </div>
-      </div>
 
-      <div className="flex items-center gap-3">
-        <button
-          onClick={onPlayAgain}
-          className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-cyan-500 text-white shadow-lg shadow-cyan-500/20 hover:bg-cyan-400 active:scale-95 transition"
-          aria-label="Play again"
-        >
-          <RotateCcw className="h-5 w-5" />
-        </button>
-        <button
-          onClick={sharePoster}
-          disabled={!posterBlob || isSharing}
-          className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-400 active:scale-95 transition disabled:cursor-not-allowed disabled:opacity-50"
-          aria-label="Share poster to Slack"
-        >
-          <Share2 className="h-5 w-5" />
-        </button>
-        <button
-          onClick={onHome}
-          className={`inline-flex h-11 w-11 items-center justify-center rounded-xl active:scale-95 transition ${
-            isDark
-              ? 'bg-slate-800 text-white ring-1 ring-slate-600 hover:bg-slate-700'
-              : 'bg-slate-200 text-slate-800 hover:bg-slate-300'
-          }`}
-          aria-label="Main menu"
-        >
-          <Home className="h-5 w-5" />
-        </button>
-      </div>
+        {/* ---- Headline ---- */}
+        <header className="order-1 shrink-0 lg:order-2 lg:self-end">
+          <h1 className="font-display text-[clamp(1.75rem,4.6vh,3rem)] font-bold leading-[1.05] tracking-tight text-brand-ink lg:text-6xl">
+            Congra<span className="text-brand-blue">tulations!</span>
+          </h1>
+          <p className="mx-auto mt-[clamp(0.3rem,1vh,0.75rem)] max-w-xs text-[clamp(0.85rem,1.9vh,1.125rem)] leading-snug text-brand-body lg:mx-0 lg:max-w-sm lg:text-lg">
+            Brick by brick, look what we made possible together.
+          </p>
+        </header>
 
-      <div
-        className={`min-h-5 text-center text-xs font-medium ${
-          isDark ? 'text-slate-400' : 'text-slate-500'
-        }`}
-        role="status"
-        aria-live="polite"
-      >
-        {shareStatus}
-        {posterUrl && (
-          <a href={posterUrl} download={`tetris-poster-${time.replace(':', '-')}.png`} className="sr-only">
-            Poster PNG
-          </a>
-        )}
+        {/* ---- Stats + actions ---- */}
+        <div className="order-3 mt-[clamp(0.6rem,2vh,1.75rem)] w-full shrink-0 lg:mt-0 lg:self-start">
+          <button
+            onClick={sharePoster}
+            disabled={!posterBlob || isSharing}
+            className="inline-flex w-full items-center justify-center gap-3 rounded-full bg-brand-blue px-8 py-[clamp(0.7rem,2vh,1.25rem)] text-[clamp(1rem,2.4vh,1.25rem)] font-medium text-white shadow-cta transition hover:bg-brand-blue-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-blue active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Share Poster
+            <Share className="h-5 w-5" strokeWidth={2.25} />
+          </button>
+
+          <p className="mt-[clamp(0.5rem,1.6vh,1.25rem)] text-center text-[clamp(0.75rem,1.7vh,0.875rem)] text-brand-body">
+            First 50 to complete and share earn rewards.
+          </p>
+
+          <div
+            className="min-h-5 text-center text-xs font-medium text-brand-muted"
+            role="status"
+            aria-live="polite"
+          >
+            {shareStatus}
+          </div>
+
+          <div className="mt-[clamp(0.5rem,2vh,1.75rem)] flex justify-center">
+            <img
+              src="/assets/into-the-next-logo.png"
+              alt="Into The Next"
+              className="h-[clamp(1.5rem,3.5vh,2.25rem)] w-auto"
+            />
+          </div>
+        </div>
       </div>
     </div>
   );

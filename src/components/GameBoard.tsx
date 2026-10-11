@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import type { GameState, GameConfig, ThemeMode } from '@/types';
+import type { GameState, GameConfig } from '@/types';
+import { getBoardImageOpacity, toCssOpacity } from '@/boardOpacity';
 import { PieceTile } from './PieceTile';
 import { SPAWN_ROWS } from '@/gameLogic';
 
@@ -7,12 +7,18 @@ interface GameBoardProps {
   state: GameState;
   config: GameConfig;
   cellSize: number;
-  theme: ThemeMode;
-  showHint: boolean;
 }
 
-export function GameBoard({ state, config, cellSize, theme, showHint }: GameBoardProps) {
-  const isDark = theme === 'dark';
+/** Width of the white seams between tiles, matching the reference UI. */
+const SEAM = 2;
+
+/**
+ * How strongly the finished picture shows through the empty board, 0 to 1.
+ * Raise it to make the puzzle easier to read, drop it to 0 to hide it entirely.
+ */
+export const BOARD_IMAGE_OPACITY = 0.25;
+
+export function GameBoard({ state, config, cellSize }: GameBoardProps) {
   const { cols, rows } = config.difficulty;
   const imageUrl = config.image.url;
   const boardWidth = cols * cellSize;
@@ -20,30 +26,12 @@ export function GameBoard({ state, config, cellSize, theme, showHint }: GameBoar
   const spawnHeight = SPAWN_ROWS * cellSize;
   const bgSize = `${boardWidth}px ${boardHeight}px`;
 
-  const ghost = useMemo(() => {
-    if (!showHint || !state.currentPiece || state.won) return null;
-    const target = state.targets.get(state.currentPiece.id);
-    if (!target) return null;
-    return { pieceId: state.currentPiece.id, ...target };
-  }, [showHint, state.currentPiece, state.targets, state.won]);
-
-  const ghostCells = useMemo(() => {
-    if (!ghost) return new Set<string>();
-    const cells = new Set<string>();
-    for (const cell of ghost.cells) {
-      cells.add(`${ghost.col + cell.x},${ghost.row + cell.y}`);
-    }
-    return cells;
-  }, [ghost]);
-
   const getTiles = (pieceId: number) => state.partitions.get(pieceId) ?? [];
 
   if (state.board.length === 0 || cellSize <= 0) {
     return (
       <div
-        className={`rounded-lg ring-1 shadow-2xl animate-pulse ${
-          isDark ? 'bg-slate-900/80 ring-slate-600/50' : 'bg-white/80 ring-slate-200'
-        }`}
+        className="animate-pulse rounded-lg bg-black/10"
         style={{ width: cols * 40, height: rows * 40 }}
       />
     );
@@ -51,43 +39,36 @@ export function GameBoard({ state, config, cellSize, theme, showHint }: GameBoar
 
   return (
     <div
-      className="relative"
+      className="relative select-none"
       style={{ width: boardWidth, height: boardHeight + spawnHeight }}
     >
+      {/* ---- Spawn zone: slightly lifted off the board so pieces read as "incoming" ---- */}
       <div
-        className={`absolute left-0 top-0 rounded-t-lg border border-dashed ${
-          isDark ? 'border-cyan-300/35 bg-cyan-300/[0.03]' : 'border-cyan-500/45 bg-cyan-100/40'
-        }`}
+        className="absolute left-0 top-0 overflow-hidden bg-[#222020]"
         style={{ width: boardWidth, height: spawnHeight }}
       >
         <div
-          className={`absolute inset-x-0 bottom-0 border-b shadow-[0_0_18px_rgba(34,211,238,0.18)] ${
-            isDark ? 'border-cyan-300/30' : 'border-cyan-500/35'
-          }`}
-        />
-        <div
-          className="absolute inset-0 opacity-40"
+          className="absolute inset-0 opacity-70"
           style={{
             backgroundImage:
-              'linear-gradient(rgba(100,116,139,0.18) 1px, transparent 1px), linear-gradient(90deg, rgba(100,116,139,0.18) 1px, transparent 1px)',
+              'linear-gradient(#ffffff 2px, transparent 2px), linear-gradient(90deg, #ffffff 2px, transparent 2px)',
             backgroundSize: `${cellSize}px ${cellSize}px`,
           }}
         />
       </div>
 
+      {/* ---- Playfield ---- */}
       <div
-        className={`absolute left-0 rounded-b-lg overflow-hidden ring-1 shadow-2xl ${
-          isDark ? 'bg-slate-900/80 ring-slate-600/50' : 'bg-white/90 ring-slate-300'
-        }`}
+        className="absolute left-0 overflow-hidden bg-black"
         style={{ top: spawnHeight, width: boardWidth, height: boardHeight }}
       >
         <img
           src={imageUrl}
-          alt="Puzzle reference"
-          className={`absolute inset-0 w-full h-full object-cover pointer-events-none select-none ${
-            isDark ? 'opacity-[0.07]' : 'opacity-[0.12]'
-          }`}
+          alt=""
+          aria-hidden="true"
           draggable={false}
+          className="pointer-events-none absolute inset-0 h-full w-full select-none object-fill"
+          style={{ opacity: toCssOpacity(getBoardImageOpacity()) }}
         />
 
         <div
@@ -100,69 +81,28 @@ export function GameBoard({ state, config, cellSize, theme, showHint }: GameBoar
           {Array.from({ length: rows * cols }).map((_, i) => {
             const row = Math.floor(i / cols);
             const col = i % cols;
-            const key = `${col},${row}`;
             const cellValue = state.board[row][col];
-            const isGhostCell = ghostCells.has(key);
-
-            const ghostEdges = isGhostCell
-              ? {
-                  top: !ghostCells.has(`${col},${row - 1}`),
-                  bottom: !ghostCells.has(`${col},${row + 1}`),
-                  left: !ghostCells.has(`${col - 1},${row}`),
-                  right: !ghostCells.has(`${col + 1},${row}`),
-                }
-              : null;
 
             return (
               <div
                 key={i}
-                className={`relative border ${isDark ? 'border-slate-700/30' : 'border-slate-300/70'}`}
-                style={{ width: cellSize, height: cellSize }}
+                className="relative"
+                style={{
+                  width: cellSize,
+                  height: cellSize,
+                  // White seams drawn as insets keeps the grid crisp at any cell size.
+                  boxShadow: `inset 0 0 0 ${SEAM / 2}px #ffffff`,
+                }}
               >
-                <div className={`absolute inset-0 ${isDark ? 'bg-slate-800/20' : 'bg-white/10'}`} />
-
-                {isGhostCell && cellValue === null && state.currentPiece && (() => {
-                  const tileIdx = ghost!.cells.findIndex(
-                    (c) => ghost!.col + c.x === col && ghost!.row + c.y === row,
-                  );
-                  const ghostTile = getTiles(state.currentPiece.id)[tileIdx];
-                  if (!ghostTile || !ghostEdges) return null;
-                  return (
-                    <div
-                      className="absolute inset-0 animate-pulse-glow"
-                      style={{
-                        backgroundImage: `url(${imageUrl})`,
-                        backgroundSize: bgSize,
-                        backgroundPosition: `${ghostTile.bgPosX}% ${ghostTile.bgPosY}%`,
-                        opacity: 0.3,
-                      }}
-                    >
-                      <div className="absolute inset-0 bg-amber-400/20" />
-                      {ghostEdges.top && (
-                        <div className="absolute top-0 left-0 right-0 h-[3px] bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)]" />
-                      )}
-                      {ghostEdges.bottom && (
-                        <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)]" />
-                      )}
-                      {ghostEdges.left && (
-                        <div className="absolute top-0 bottom-0 left-0 w-[3px] bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)]" />
-                      )}
-                      {ghostEdges.right && (
-                        <div className="absolute top-0 bottom-0 right-0 w-[3px] bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)]" />
-                      )}
-                    </div>
-                  );
-                })()}
-
                 {cellValue !== null && (() => {
                   const tiles = getTiles(cellValue);
                   const target = state.targets.get(cellValue);
                   if (!target) return null;
-                  const tileIdx = tiles.findIndex((_, idx) => {
-                    const expectedX = cols > 1 ? `${(col / (cols - 1)) * 100}` : '50';
-                    const expectedY = rows > 1 ? `${(row / (rows - 1)) * 100}` : '50';
-                    return tiles[idx].bgPosX === expectedX && tiles[idx].bgPosY === expectedY;
-                  });
+                  const expectedX = cols > 1 ? `${(col / (cols - 1)) * 100}` : '50';
+                  const expectedY = rows > 1 ? `${(row / (rows - 1)) * 100}` : '50';
+                  const tileIdx = tiles.findIndex(
+                    (t) => t.bgPosX === expectedX && t.bgPosY === expectedY,
+                  );
                   if (tileIdx < 0) return null;
                   return (
                     <PieceTile
@@ -170,7 +110,7 @@ export function GameBoard({ state, config, cellSize, theme, showHint }: GameBoar
                       imageUrl={imageUrl}
                       bgSize={bgSize}
                       isPlaced
-                      className="w-full h-full"
+                      className="h-full w-full"
                     />
                   );
                 })()}
@@ -180,6 +120,38 @@ export function GameBoard({ state, config, cellSize, theme, showHint }: GameBoar
         </div>
       </div>
 
+      {/* ---- Rejected piece: blinks in place before vanishing ---- */}
+      {state.rejectedPiece && (() => {
+        const rejected = state.rejectedPiece;
+        const tiles = getTiles(rejected.id);
+        return (
+          <div className="animate-blink-out pointer-events-none absolute inset-0 z-40">
+            {rejected.cells.map((cell, tileIdx) => {
+              const tile = tiles[tileIdx];
+              if (!tile) return null;
+              return (
+                <div
+                  key={`rejected-${rejected.id}-${tileIdx}`}
+                  className="absolute overflow-hidden ring-2 ring-inset ring-brand-coral"
+                  style={{
+                    left: (rejected.col + cell.x) * cellSize,
+                    top: (rejected.row + cell.y + SPAWN_ROWS) * cellSize,
+                    width: cellSize,
+                    height: cellSize,
+                    backgroundImage: `url(${imageUrl})`,
+                    backgroundSize: bgSize,
+                    backgroundPosition: `${tile.bgPosX}% ${tile.bgPosY}%`,
+                  }}
+                >
+                  <div className="absolute inset-0 bg-brand-coral/35" />
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
+      {/* ---- Falling piece ---- */}
       {state.currentPiece && (() => {
         const tiles = getTiles(state.currentPiece.id);
         return state.currentPiece.cells.map((cell, tileIdx) => {
@@ -202,7 +174,7 @@ export function GameBoard({ state, config, cellSize, theme, showHint }: GameBoar
                 bgSize={bgSize}
                 isFalling
                 isWrong={state.wrongFlash}
-                className="w-full h-full"
+                className="h-full w-full"
               />
             </div>
           );

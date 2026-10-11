@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -6,30 +6,22 @@ import {
   ChevronsDown,
   Pause,
   Play,
-  Home,
   Clock,
-  Eye,
-  EyeOff,
 } from 'lucide-react';
 import type { GameConfig, GameState } from '@/types';
-import type { ThemeMode } from '@/types';
 import { GameBoard } from './GameBoard';
 import { SPAWN_ROWS } from '@/gameLogic';
 
 interface GameScreenProps {
   config: GameConfig;
   state: GameState;
-  theme: ThemeMode;
-  showHint: boolean;
   onMoveLeft: () => void;
   onMoveRight: () => void;
   onMoveDown: () => void;
   onHardDrop: () => void;
-  onPause: () => void;
   onResume: () => void;
   onReset: () => void;
   onHome: () => void;
-  onToggleHint: () => void;
 }
 
 function formatTime(seconds: number): string {
@@ -38,212 +30,159 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+/**
+ * Measures the space left for the board and returns the largest cell size that
+ * fits both axes. Re-measures on resize and orientation change so the same
+ * layout works from a 320px phone up to a desktop window.
+ */
+function useCellSize(cols: number, rows: number) {
+  const areaRef = useRef<HTMLDivElement>(null);
+  const [cellSize, setCellSize] = useState(0);
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      const area = areaRef.current;
+      if (!area) return;
+      const { width, height } = area.getBoundingClientRect();
+      if (width <= 0 || height <= 0) return;
+      const byWidth = width / cols;
+      const byHeight = height / (rows + SPAWN_ROWS);
+      setCellSize(Math.max(12, Math.floor(Math.min(byWidth, byHeight))));
+    };
+
+    measure();
+
+    const area = areaRef.current;
+    const observer = new ResizeObserver(measure);
+    if (area) observer.observe(area);
+    window.addEventListener('orientationchange', measure);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('orientationchange', measure);
+    };
+  }, [cols, rows]);
+
+  return { areaRef, cellSize };
+}
+
 export function GameScreen({
   config,
   state,
-  theme,
-  showHint,
   onMoveLeft,
   onMoveRight,
   onMoveDown,
   onHardDrop,
-  onPause,
   onResume,
   onReset,
   onHome,
-  onToggleHint,
 }: GameScreenProps) {
-  const isDark = theme === 'dark';
   const { cols, rows } = config.difficulty;
+  const { areaRef, cellSize } = useCellSize(cols, rows);
+  const [showKeyHint, setShowKeyHint] = useState(false);
 
-  const cellSize = useMemo(() => {
-    const maxBoardWidth = Math.min(
-      typeof window !== 'undefined' ? window.innerWidth - 32 : 600,
-      600,
-    );
-    const maxBoardHeight = Math.min(
-      typeof window !== 'undefined' ? window.innerHeight - 168 : 600,
-      600,
-    );
-    const sizeByWidth = Math.floor(maxBoardWidth / cols);
-    const sizeByHeight = Math.floor(maxBoardHeight / (rows + SPAWN_ROWS));
-    return Math.min(sizeByWidth, sizeByHeight, 64);
-  }, [cols, rows]);
+  // Header and controls line up with the board rather than the viewport, so a
+  // wide window doesn't leave them floating far past the playfield edges.
+  const rail: React.CSSProperties = cellSize > 0 ? { maxWidth: cols * cellSize } : {};
 
-  const btnBase =
-    'flex items-center justify-center rounded-xl transition-all duration-150 active:scale-90 font-medium';
+  // Only advertise keyboard controls once we know a keyboard is in play.
+  useEffect(() => {
+    if (window.matchMedia('(pointer: fine)').matches) setShowKeyHint(true);
+  }, []);
+
+  const padBtn =
+    'flex aspect-square w-full max-w-[5.5rem] items-center justify-center rounded-2xl bg-white text-brand-blue shadow-card transition hover:bg-white/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue active:scale-95 disabled:opacity-40';
 
   return (
-    <div
-      className={`min-h-[100dvh] flex flex-col overflow-hidden ${
-        isDark
-          ? 'bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800'
-          : 'bg-gradient-to-br from-sky-50 via-white to-cyan-50'
-      }`}
-    >
-      <div
-        className={`flex items-center justify-between px-4 py-3 backdrop-blur-sm border-b shadow-sm ${
-          isDark
-            ? 'bg-slate-900/80 border-slate-700/70'
-            : 'bg-white/85 border-slate-200/80'
-        }`}
-      >
-        <button
-          onClick={onHome}
-          className={`flex items-center gap-2 transition-colors ${
-            isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-950'
-          }`}
+    <div className="relative min-h-[100dvh] w-full">
+      <div className="brand-backdrop" aria-hidden="true" />
+
+      <div className="relative z-10 mx-auto flex h-[100dvh] w-full max-w-md flex-col gap-3 px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-4 sm:gap-4 sm:px-6 lg:max-w-xl lg:gap-5 lg:py-8">
+        {/* ---- Header ---- */}
+        <header
+          style={rail}
+          className="mx-auto flex w-full shrink-0 items-center justify-between rounded-2xl bg-brand-mist px-5 py-4 shadow-card sm:px-6"
         >
-          <Home className="w-5 h-5" />
-          <span className="text-sm font-medium hidden sm:inline">Menu</span>
-        </button>
+          <img src="/assets/intuit-logo.png" alt="Intuit" className="h-7 w-auto sm:h-8" />
 
-        <div className="flex items-center gap-3 sm:gap-6">
-          <div className="flex items-center gap-1.5">
-            <Clock className="w-4 h-4 text-cyan-400" />
-            <div>
-              <div className={`text-[10px] uppercase tracking-wide leading-none ${isDark ? 'text-slate-500' : 'text-slate-500'}`}>Time</div>
-              <div className={`text-base font-bold leading-tight tabular-nums ${isDark ? 'text-white' : 'text-slate-950'}`}>{formatTime(state.elapsed)}</div>
-            </div>
+          <div className="flex items-center gap-2 text-brand-ink">
+            <Clock className="h-6 w-6 sm:h-7 sm:w-7" strokeWidth={2.25} />
+            <span className="font-display text-2xl font-bold tabular-nums sm:text-3xl">
+              {formatTime(state.elapsed)}
+            </span>
           </div>
+        </header>
+
+        {/* ---- Keyboard hint (pointer devices / laptop only) ---- */}
+        {showKeyHint && (
+          <p
+            style={rail}
+            className="mx-auto hidden w-full shrink-0 text-xs text-brand-muted lg:block"
+          >
+            Keyboard: &larr; &darr; &rarr; &middot; Space to drop
+          </p>
+        )}
+
+        {/* ---- Board ---- */}
+        <div ref={areaRef} className="flex min-h-0 flex-1 items-center justify-center">
+          {cellSize > 0 && (
+            <GameBoard state={state} config={config} cellSize={cellSize} />
+          )}
         </div>
 
-        <div className="mr-14 flex items-center gap-2">
-          <button
-            onClick={onToggleHint}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors text-sm ${
-              isDark
-                ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white'
-                : 'bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-950'
-            }`}
-            aria-label={showHint ? 'Hide hint' : 'Show hint'}
-          >
-            {showHint ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-            <span className="hidden sm:inline">Hint</span>
-          </button>
-
-          <button
-            onClick={state.paused ? onResume : onPause}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors text-sm ${
-              isDark
-                ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white'
-                : 'bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-950'
-            }`}
-          >
-            {state.paused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
-            <span className="hidden sm:inline">{state.paused ? 'Resume' : 'Pause'}</span>
-          </button>
-        </div>
-      </div>
-
-      <div className="flex-1 relative overflow-auto p-4 pb-28">
-        <div className="min-h-full flex items-center justify-center">
-          <div className="relative flex flex-col items-center">
-            <GameBoard
-              state={state}
-              config={config}
-              cellSize={cellSize}
-              theme={theme}
-              showHint={showHint}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div
-        className={`fixed inset-x-0 bottom-0 z-30 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur-sm border-t ${
-          isDark ? 'bg-slate-900/80 border-slate-700/70' : 'bg-white/85 border-slate-200/80'
-        }`}
-      >
-        <div className="flex items-center justify-center gap-2 sm:gap-3 max-w-md mx-auto">
-          <button
-            onClick={onMoveLeft}
-            className={`${btnBase} h-12 w-12 sm:h-14 sm:w-14 ring-1 shadow-sm ${
-              isDark
-                ? 'bg-slate-800 hover:bg-slate-700 ring-slate-600/50 text-white'
-                : 'bg-white hover:bg-slate-100 ring-slate-300 text-slate-700'
-            }`}
-            aria-label="Move left"
-          >
-            <ArrowLeft className="w-6 h-6" />
-          </button>
-
-          <button
-            onClick={onHardDrop}
-            className={`${btnBase} h-12 w-12 sm:h-14 sm:w-14 bg-emerald-500 hover:bg-emerald-400 ring-1 ring-emerald-300 text-white shadow-sm`}
-            aria-label="Hard drop"
-          >
-            <ChevronsDown className="w-6 h-6" />
-          </button>
-
-          <button
-            onClick={onMoveDown}
-            className={`${btnBase} h-12 w-12 sm:h-14 sm:w-14 ring-1 shadow-sm ${
-              isDark
-                ? 'bg-slate-800 hover:bg-slate-700 ring-slate-600/50 text-white'
-                : 'bg-white hover:bg-slate-100 ring-slate-300 text-slate-700'
-            }`}
-            aria-label="Soft drop"
-          >
-            <ArrowDown className="w-6 h-6" />
-          </button>
-
-          <button
-            onClick={onMoveRight}
-            className={`${btnBase} h-12 w-12 sm:h-14 sm:w-14 ring-1 shadow-sm ${
-              isDark
-                ? 'bg-slate-800 hover:bg-slate-700 ring-slate-600/50 text-white'
-                : 'bg-white hover:bg-slate-100 ring-slate-300 text-slate-700'
-            }`}
-            aria-label="Move right"
-          >
-            <ArrowRight className="w-6 h-6" />
-          </button>
-        </div>
-      </div>
-
-      {state.paused && !state.won && (
+        {/* ---- D-pad ---- */}
         <div
-          className={`fixed inset-0 z-50 backdrop-blur-sm flex items-center justify-center animate-fade-in ${
-            isDark ? 'bg-slate-950/80' : 'bg-white/80'
-          }`}
+          style={rail}
+          className="mx-auto flex w-full shrink-0 items-stretch justify-center gap-3 sm:gap-4"
         >
-          <div className="text-center">
-            <Pause className="w-16 h-16 text-cyan-400 mx-auto mb-4" />
-            <h2 className={`text-3xl font-bold mb-2 ${isDark ? 'text-white' : 'text-slate-950'}`}>Paused</h2>
-            <p className={`mb-6 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Take a breather. Resume when ready.</p>
-            <div className="flex items-center gap-3 justify-center">
+          <button onClick={onMoveLeft} className={padBtn} aria-label="Move left">
+            <ArrowLeft className="h-8 w-8 sm:h-9 sm:w-9" strokeWidth={2.25} />
+          </button>
+          <button onClick={onMoveDown} className={padBtn} aria-label="Move down">
+            <ArrowDown className="h-8 w-8 sm:h-9 sm:w-9" strokeWidth={2.25} />
+          </button>
+          <button onClick={onMoveRight} className={padBtn} aria-label="Move right">
+            <ArrowRight className="h-8 w-8 sm:h-9 sm:w-9" strokeWidth={2.25} />
+          </button>
+          <button onClick={onHardDrop} className={padBtn} aria-label="Drop at once">
+            <ChevronsDown className="h-8 w-8 sm:h-9 sm:w-9" strokeWidth={2.25} />
+          </button>
+        </div>
+      </div>
+
+      {/* ---- Pause overlay ---- */}
+      {state.paused && !state.won && (
+        <div className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center bg-brand-sky/90 px-6 backdrop-blur-sm">
+          <div className="w-full max-w-sm text-center">
+            <Pause className="mx-auto mb-4 h-14 w-14 text-brand-blue" />
+            <h2 className="font-display text-4xl font-bold text-brand-ink">Paused</h2>
+            <p className="mt-2 text-brand-muted">Take a breather. Resume when ready.</p>
+
+            <div className="mt-8 space-y-3">
               <button
                 onClick={onResume}
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-semibold transition-colors"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-brand-blue px-8 py-4 text-lg font-medium text-white shadow-cta transition hover:bg-brand-blue-dark active:scale-[0.98]"
               >
-                <Play className="w-5 h-5" />
+                <Play className="h-5 w-5" />
                 Resume
               </button>
-              <button
-                onClick={onReset}
-                className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-colors ${
-                  isDark ? 'bg-slate-700 hover:bg-slate-600 text-white' : 'bg-slate-200 hover:bg-slate-300 text-slate-800'
-                }`}
-              >
-                Restart
-              </button>
-              <button
-                onClick={onHome}
-                className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-colors ${
-                  isDark ? 'bg-slate-700 hover:bg-slate-600 text-white' : 'bg-slate-200 hover:bg-slate-300 text-slate-800'
-                }`}
-              >
-                <Home className="w-5 h-5" />
-                Menu
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={onReset}
+                  className="flex-1 rounded-full bg-white px-6 py-3.5 font-medium text-brand-body shadow-card transition hover:bg-white/80 active:scale-[0.98]"
+                >
+                  Restart
+                </button>
+                <button
+                  onClick={onHome}
+                  className="flex-1 rounded-full bg-white px-6 py-3.5 font-medium text-brand-body shadow-card transition hover:bg-white/80 active:scale-[0.98]"
+                >
+                  Menu
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      )}
-
-      {state.wrongFlash && (
-        <div className="fixed inset-0 z-40 bg-red-500/10 pointer-events-none animate-flash" />
       )}
     </div>
   );

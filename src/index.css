@@ -2,6 +2,66 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---- Intuit Tally type family ---- */
+
+@font-face {
+  font-family: 'Tally';
+  src: url('/fonts/INTUIT_FONT_Tally-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Tally';
+  src: url('/fonts/INTUIT_FONT_Tally-Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Tally';
+  src: url('/fonts/INTUIT_FONT_Tally-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Tally Display';
+  src: url('/fonts/INTUIT_FONT_TallyDisplay-Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Tally Display';
+  src: url('/fonts/INTUIT_FONT_TallyDisplay-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ---- Base ---- */
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  background-color: #d7e8f9;
+  color: #2b2e32;
+  font-family: 'Tally', system-ui, sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
 /* ---- Custom animations ---- */
 
 @keyframes fade-in {
@@ -12,7 +72,7 @@
 @keyframes fade-in-up {
   from {
     opacity: 0;
-    transform: translateY(24px);
+    transform: translateY(16px);
   }
   to {
     opacity: 1;
@@ -40,29 +100,18 @@
   75% { transform: translateX(4px); }
 }
 
+/* Rejected piece: three pulses, then fade away. Must stay in sync with the
+   900ms flash timer in useGameEngine. */
+@keyframes blink-out {
+  0%, 24%, 48% { opacity: 1; }
+  12%, 36%, 60% { opacity: 0.15; }
+  72% { opacity: 1; }
+  100% { opacity: 0; transform: scale(0.88); }
+}
+
 @keyframes flash {
   0% { opacity: 0.6; }
   100% { opacity: 0; }
-}
-
-@keyframes confetti-fall {
-  0% {
-    transform: translateY(0) rotate(0deg);
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(100vh) rotate(720deg);
-    opacity: 0;
-  }
-}
-
-@keyframes pulse-glow {
-  0%, 100% {
-    box-shadow: 0 0 8px rgba(34, 211, 238, 0.3);
-  }
-  50% {
-    box-shadow: 0 0 16px rgba(34, 211, 238, 0.6);
-  }
 }
 
 /* ---- Utility classes ---- */
@@ -72,7 +121,7 @@
 }
 
 .animate-fade-in-up {
-  animation: fade-in-up 0.5s ease-out;
+  animation: fade-in-up 0.5s ease-out both;
 }
 
 .animate-bounce-in {
@@ -83,23 +132,60 @@
   animation: shake 0.3s ease-in-out;
 }
 
+.animate-blink-out {
+  animation: blink-out 0.9s ease-in-out forwards;
+}
+
 .animate-flash {
   animation: flash 0.6s ease-out forwards;
 }
 
-.animate-confetti {
-  animation: confetti-fall linear forwards;
+/* The poster is meant to be saved. The global user-select/callout suppression
+   would otherwise block the iOS long-press "Save Image" sheet. */
+.poster-image {
+  -webkit-touch-callout: default;
+  -webkit-user-select: auto;
+  user-select: auto;
+  touch-action: manipulation;
 }
 
-.animate-pulse-glow {
-  animation: pulse-glow 2s ease-in-out infinite;
+/* The soft off-white arc that sits behind the top-right of every screen. */
+.brand-backdrop {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
 }
 
-/* Prevent text selection during gameplay */
-body {
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-tap-highlight-color: transparent;
+.brand-backdrop::before {
+  content: '';
+  position: absolute;
+  top: -42vw;
+  right: -30vw;
+  width: 108vw;
+  height: 108vw;
+  border-radius: 9999px;
+  background: #f0f4f6;
+}
+
+@media (min-width: 1024px) {
+  .brand-backdrop::before {
+    top: -38vw;
+    right: -22vw;
+    width: 70vw;
+    height: 70vw;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Custom scrollbar */
@@ -108,12 +194,12 @@ body {
   height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: rgb(241, 245, 249);
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgb(203, 213, 225);
+  background: rgba(35, 109, 255, 0.25);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgb(148, 163, 184);
+  background: rgba(35, 109, 255, 0.45);
 }

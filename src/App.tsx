@@ -2,27 +2,36 @@ import { useState, useCallback, useEffect } from 'react';
 import { StartScreen } from '@/components/StartScreen';
 import { GameScreen } from '@/components/GameScreen';
 import { WinScreen } from '@/components/WinScreen';
-import { ThemeToggle } from '@/components/ThemeToggle';
+import { OpacityScreen } from '@/components/OpacityScreen';
 import { useGameEngine } from '@/useGameEngine';
-import type { GameConfig, GameScreen as ScreenType, GameState, ThemeMode } from '@/types';
+import type { GameConfig, GameScreen as ScreenType, GameState } from '@/types';
+
+/**
+ * The game is a state machine rather than a set of pages, so the only real
+ * route is the /opacity tuning page. A pathname check keeps that one extra
+ * screen from pulling in a router.
+ */
+function usePathname(): string {
+  const [pathname, setPathname] = useState(() =>
+    typeof window === 'undefined' ? '/' : window.location.pathname,
+  );
+
+  useEffect(() => {
+    const onPopState = () => setPathname(window.location.pathname);
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  return pathname;
+}
 
 function App() {
+  const pathname = usePathname();
   const [screen, setScreen] = useState<ScreenType>('start');
   const [config, setConfig] = useState<GameConfig | null>(null);
   const [completedState, setCompletedState] = useState<GameState | null>(null);
-  const [theme, setTheme] = useState<ThemeMode>('dark');
-  const [showHint, setShowHint] = useState(true);
 
   const engine = useGameEngine(screen === 'playing' ? config : null);
-  const isDark = theme === 'dark';
-
-  const handleToggleTheme = useCallback(() => {
-    setTheme((current) => (current === 'light' ? 'dark' : 'light'));
-  }, []);
-
-  const handleToggleHint = useCallback(() => {
-    setShowHint((current) => !current);
-  }, []);
 
   const handleStart = useCallback((cfg: GameConfig) => {
     setCompletedState(null);
@@ -36,15 +45,6 @@ function App() {
     setConfig(null);
   }, []);
 
-  const handlePlayAgain = useCallback(() => {
-    if (config) {
-      // Force re-init by creating a new config object reference
-      setCompletedState(null);
-      setConfig({ ...config });
-      setScreen('playing');
-    }
-  }, [config]);
-
   const handleReset = useCallback(() => {
     engine.reset();
   }, [engine]);
@@ -57,50 +57,28 @@ function App() {
     }
   }, [screen, engine.state]);
 
+  if (pathname.replace(/\/+$/, '') === '/opacity') {
+    return <OpacityScreen />;
+  }
+
   if (screen === 'start' || !config) {
-    return (
-      <>
-        <ThemeToggle theme={theme} onToggle={handleToggleTheme} />
-        <StartScreen onStart={handleStart} theme={theme} />
-      </>
-    );
+    return <StartScreen onStart={handleStart} />;
   }
 
   if (screen === 'won') {
     return (
-      <>
-        <ThemeToggle theme={theme} onToggle={handleToggleTheme} />
-        <WinScreen
-          config={config}
-          state={completedState ?? engine.state}
-          theme={theme}
-          onPlayAgain={handlePlayAgain}
-          onHome={handleHome}
-        />
-      </>
+      <WinScreen config={config} state={completedState ?? engine.state} />
     );
   }
 
   // Don't render GameScreen until the engine has initialized the board
   if (engine.state.board.length === 0) {
     return (
-      <div
-        className={`min-h-screen flex items-center justify-center ${
-          isDark
-            ? 'bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800'
-            : 'bg-gradient-to-br from-sky-50 via-white to-cyan-50'
-        }`}
-      >
-        <ThemeToggle theme={theme} onToggle={handleToggleTheme} />
-        <div className="text-center">
-          <div
-            className={`inline-block w-10 h-10 border-3 border-t-cyan-400 rounded-full animate-spin mb-4 ${
-              isDark ? 'border-slate-700' : 'border-slate-200'
-            }`}
-          />
-          <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-            Preparing puzzle...
-          </p>
+      <div className="relative flex min-h-[100dvh] items-center justify-center">
+        <div className="brand-backdrop" aria-hidden="true" />
+        <div className="relative z-10 text-center">
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-brand-blue/20 border-t-brand-blue" />
+          <p className="text-sm text-brand-muted">Preparing puzzle...</p>
         </div>
       </div>
     );
@@ -110,17 +88,13 @@ function App() {
     <GameScreen
       config={config}
       state={engine.state}
-      theme={theme}
-      showHint={showHint}
       onMoveLeft={engine.moveLeft}
       onMoveRight={engine.moveRight}
       onMoveDown={engine.moveDown}
       onHardDrop={engine.hardDrop}
-      onPause={engine.pause}
       onResume={engine.resume}
       onReset={handleReset}
       onHome={handleHome}
-      onToggleHint={handleToggleHint}
     />
   );
 }

@@ -39,27 +39,17 @@ export const DIFFICULTIES: Record<DifficultyId, DifficultyConfig> = {
   },
 };
 
-/** Puzzle images from Pexels (square, high-res). */
+/** Puzzle images — brand photography shipped in /public/assets. */
 export const PUZZLE_IMAGES: ImageOption[] = [
   {
-    id: 'balloons',
-    label: 'Hot Air Balloons',
-    url: 'https://images.pexels.com/photos/3027216/pexels-photo-3027216.jpeg?auto=compress&cs=tinysrgb&h=650&w=940',
+    id: 'hq-tower',
+    label: 'Intuit HQ',
+    url: '/assets/puzzle-picture.png',
   },
   {
-    id: 'beach',
-    label: 'Tropical Sunset',
-    url: 'https://images.pexels.com/photos/16314764/pexels-photo-16314764.jpeg?auto=compress&cs=tinysrgb&h=650&w=940',
-  },
-  {
-    id: 'autumn',
-    label: 'Autumn Forest',
-    url: 'https://images.pexels.com/photos/25315327/pexels-photo-25315327.jpeg?auto=compress&cs=tinysrgb&h=650&w=940',
-  },
-  {
-    id: 'mountain',
-    label: 'Mountain Lake',
-    url: 'https://images.pexels.com/photos/30171670/pexels-photo-30171670.jpeg?auto=compress&cs=tinysrgb&h=650&w=940',
+    id: 'hq-facade',
+    label: 'Intuit Facade',
+    url: '/assets/puzzle-picture-1.png',
   },
 ];
 

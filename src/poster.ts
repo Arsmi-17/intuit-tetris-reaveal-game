@@ -1,10 +1,34 @@
-const POSTER_SIZE = 1080;
+/**
+ * Renders the finish poster: a single, self-contained PNG holding the revealed
+ * picture, the sign-off copy and the finish time — everything the player needs
+ * to share in one attachment.
+ */
 
-interface PosterOptions {
+const POSTER_SIZE = 1600;
+
+/** Picture geometry. The photo is centred horizontally and drawn whole. */
+const IMAGE_TOP = 64;
+const IMAGE_SIDE_PAD = 210;
+const IMAGE_RADIUS = 18;
+
+/** Palette, matching the brand tokens in tailwind.config.js. */
+const SKY = '#D7E8F9';
+const BLUE = '#236DFF';
+const INK = '#0C1220';
+const MUTED = '#5B6066';
+
+const DISPLAY = '"Tally Display", "Tally", system-ui, sans-serif';
+const BODY = '"Tally", system-ui, sans-serif';
+
+export interface PosterOptions {
   imageUrl: string;
   imageLabel: string;
-  message: string;
+  /** Formatted finish time, e.g. "0:58". */
   time: string;
+  /** Headline under the picture. */
+  headline?: string;
+  /** Supporting line(s) under the headline. */
+  subhead?: string[];
 }
 
 function loadImage(url: string, label: string): Promise<HTMLImageElement> {
@@ -21,72 +45,78 @@ function loadImage(url: string, label: string): Promise<HTMLImageElement> {
 function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => {
-      if (blob) {
-        resolve(blob);
-      } else {
-        reject(new Error('Could not generate PNG poster.'));
-      }
+      if (blob) resolve(blob);
+      else reject(new Error('Could not generate PNG poster.'));
     }, 'image/png');
   });
 }
 
-function drawWrappedText(
+/** roundRect is recent enough that a manual fallback is still worth keeping. */
+function roundedPath(
   ctx: CanvasRenderingContext2D,
-  text: string,
   x: number,
   y: number,
-  maxWidth: number,
-  lineHeight: number,
+  w: number,
+  h: number,
+  r: number,
 ) {
-  const words = text.trim().split(/\s+/);
-  const lines: string[] = [];
-  let currentLine = '';
-
-  words.forEach((word) => {
-    const nextLine = currentLine ? `${currentLine} ${word}` : word;
-    if (ctx.measureText(nextLine).width <= maxWidth || !currentLine) {
-      currentLine = nextLine;
-      return;
-    }
-
-    lines.push(currentLine);
-    currentLine = word;
-  });
-
-  if (currentLine) {
-    lines.push(currentLine);
+  ctx.beginPath();
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(x, y, w, h, r);
+    return;
   }
-
-  lines.forEach((line, index) => {
-    ctx.fillText(line, x, y + index * lineHeight);
-  });
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
 }
 
-function drawClock(ctx: CanvasRenderingContext2D, x: number, y: number) {
+/** Outline clock, drawn to match the lucide icon used on screen. */
+function drawClock(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number) {
   ctx.save();
-  ctx.strokeStyle = 'rgba(207, 250, 254, 0.96)';
-  ctx.lineWidth = 4;
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = Math.max(2, r * 0.17);
+  ctx.lineCap = 'round';
+
   ctx.beginPath();
-  ctx.arc(x, y, 13, 0, Math.PI * 2);
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.stroke();
 
-  ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.moveTo(x, y);
-  ctx.lineTo(x, y - 8);
-  ctx.moveTo(x, y);
-  ctx.lineTo(x + 7, y + 4);
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx, cy - r * 0.55);
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + r * 0.45, cy + r * 0.28);
   ctx.stroke();
   ctx.restore();
+}
+
+/**
+ * Makes sure the Tally faces are rasterised before we measure or paint text.
+ * Without this the first poster of a session can fall back to a system font.
+ */
+async function ensureFonts() {
+  if (!document.fonts) return;
+  await Promise.all([
+    document.fonts.load(`700 58px ${DISPLAY}`),
+    document.fonts.load(`700 150px ${DISPLAY}`),
+    document.fonts.load(`400 46px ${BODY}`),
+    document.fonts.load(`700 38px ${BODY}`),
+  ]).catch(() => undefined);
+  await document.fonts.ready;
 }
 
 export async function generateFinishPoster({
   imageUrl,
   imageLabel,
-  message,
   time,
+  headline = 'The Next level?',
+  subhead = ['That’s going to be', 'game-changing.'],
 }: PosterOptions): Promise<Blob> {
-  await document.fonts?.ready;
+  await ensureFonts();
 
   const image = await loadImage(imageUrl, imageLabel);
   const canvas = document.createElement('canvas');
@@ -94,54 +124,68 @@ export async function generateFinishPoster({
   canvas.height = POSTER_SIZE;
 
   const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    throw new Error('Poster canvas is not available.');
-  }
+  if (!ctx) throw new Error('Poster canvas is not available.');
 
-  ctx.drawImage(image, 0, 0, POSTER_SIZE, POSTER_SIZE);
-
-  const shade = ctx.createLinearGradient(0, 0, 0, POSTER_SIZE);
-  shade.addColorStop(0, 'rgba(15, 23, 42, 0.08)');
-  shade.addColorStop(0.42, 'rgba(15, 23, 42, 0.12)');
-  shade.addColorStop(1, 'rgba(15, 23, 42, 0.82)');
-  ctx.fillStyle = shade;
+  ctx.fillStyle = SKY;
   ctx.fillRect(0, 0, POSTER_SIZE, POSTER_SIZE);
 
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(28, 28, POSTER_SIZE - 56, POSTER_SIZE - 56);
+  // ---- Picture, drawn whole ----
+  const frameLeft = IMAGE_SIDE_PAD;
+  const frameWidth = POSTER_SIZE - IMAGE_SIDE_PAD * 2;
+  const frameRight = frameLeft + frameWidth;
+  const frameBottom = IMAGE_TOP + frameWidth;
 
-  ctx.strokeStyle = 'rgba(165, 243, 252, 0.3)';
-  ctx.strokeRect(48, 48, POSTER_SIZE - 96, POSTER_SIZE - 96);
+  ctx.save();
+  roundedPath(ctx, frameLeft, IMAGE_TOP, frameWidth, frameWidth, IMAGE_RADIUS);
+  ctx.clip();
 
-  ctx.fillStyle = '#67e8f9';
-  ctx.shadowColor = 'rgba(103, 232, 249, 0.85)';
-  ctx.shadowBlur = 24;
-  ctx.fillRect(64, 64, 118, 8);
-  ctx.shadowBlur = 0;
+  // Cover-fit so the photo fills the square frame without distortion.
+  const scale = Math.max(frameWidth / image.width, frameWidth / image.height);
+  const drawW = image.width * scale;
+  const drawH = image.height * scale;
+  ctx.drawImage(
+    image,
+    frameLeft + (frameWidth - drawW) / 2,
+    IMAGE_TOP + (frameWidth - drawH) / 2,
+    drawW,
+    drawH,
+  );
+  ctx.restore();
 
-  ctx.fillStyle = '#ffffff';
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
-  ctx.shadowBlur = 24;
-  ctx.font = '900 112px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  // ---- Copy block ----
   ctx.textBaseline = 'alphabetic';
-  drawWrappedText(ctx, message, 64, 742, 520, 118);
+  const copyTop = frameBottom + 56;
 
-  ctx.shadowBlur = 0;
-  drawClock(ctx, 80, 908);
+  ctx.fillStyle = BLUE;
+  roundedPath(ctx, frameLeft, copyTop, 100, 9, 4.5);
+  ctx.fill();
 
-  ctx.fillStyle = '#cffafe';
-  ctx.font = '700 19px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-  ctx.letterSpacing = '6px';
-  ctx.fillText('TIME', 112, 915);
+  ctx.fillStyle = INK;
+  ctx.font = `700 58px ${DISPLAY}`;
+  ctx.fillText(headline, frameLeft, copyTop + 95);
+
+  ctx.fillStyle = MUTED;
+  ctx.font = `400 46px ${BODY}`;
+  subhead.forEach((line, i) => {
+    ctx.fillText(line, frameLeft, copyTop + 170 + i * 60);
+  });
+
+  // ---- Time block, right-aligned to the picture's edge ----
+  ctx.font = `700 150px ${DISPLAY}`;
+  const timeWidth = ctx.measureText(time).width;
+  const timeLeft = frameRight - timeWidth;
+
+  ctx.fillStyle = INK;
+  ctx.fillText(time, timeLeft, copyTop + 182);
+
+  const labelBaseline = copyTop + 36;
+  const clockR = 21;
+  drawClock(ctx, timeLeft + clockR, labelBaseline - 11, clockR);
+
+  ctx.font = `700 38px ${BODY}`;
+  ctx.letterSpacing = '10px';
+  ctx.fillText('TIME', timeLeft + clockR * 2 + 18, labelBaseline);
   ctx.letterSpacing = '0px';
-
-  ctx.fillStyle = '#ecfeff';
-  ctx.shadowColor = 'rgba(8, 145, 178, 0.45)';
-  ctx.shadowBlur = 18;
-  ctx.font = '900 74px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-  ctx.fillText(time, 64, 1000);
 
   return canvasToBlob(canvas);
 }
-

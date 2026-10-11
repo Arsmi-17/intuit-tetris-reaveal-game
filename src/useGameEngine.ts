@@ -69,6 +69,7 @@ function initGame(config: GameConfig): GameState {
     totalPieces: partitions.length,
     placedCount: 0,
     wrongFlash: false,
+    rejectedPiece: null,
     elapsed: 0,
   };
 }
@@ -157,6 +158,7 @@ export function useGameEngine(config: GameConfig | null): GameEngine {
         newState.placedCount += 1;
         // newState.score += 100;
         newState.wrongFlash = false;
+        newState.rejectedPiece = null;
 
         // Check win
         if (newState.placedCount >= newState.totalPieces) {
@@ -170,7 +172,9 @@ export function useGameEngine(config: GameConfig | null): GameEngine {
       }
 
       // Wrong placement — remove piece, re-queue it
+      // Keep the rejected piece on screen so it can blink before vanishing.
       newState.wrongFlash = true;
+      newState.rejectedPiece = clonePiece(piece);
       newState.currentPiece = null;
       // newState.score = Math.max(0, newState.score - 10);
 
@@ -182,7 +186,7 @@ export function useGameEngine(config: GameConfig | null): GameEngine {
         row: 0,
       };
 
-      // Clear flash after 600ms, then spawn next
+      // Let the rejected piece blink out, then spawn the retry piece
       if (flashTimerRef.current) {
         clearTimeout(flashTimerRef.current);
       }
@@ -190,13 +194,13 @@ export function useGameEngine(config: GameConfig | null): GameEngine {
         setState((prev) => {
           if (!prev) return prev;
           if (!configRef.current) return prev;
-          const cleared = { ...prev, wrongFlash: false };
+          const cleared = { ...prev, wrongFlash: false, rejectedPiece: null };
           return {
             ...cleared,
             currentPiece: spawnPiece(retryPiece, configRef.current.difficulty.cols),
           };
         });
-      }, 600);
+      }, 900);
 
       return newState;
     },
@@ -434,6 +438,7 @@ export function useGameEngine(config: GameConfig | null): GameEngine {
       totalPieces: 0,
       placedCount: 0,
       wrongFlash: false,
+      rejectedPiece: null,
       elapsed: 0,
     },
     moveLeft,

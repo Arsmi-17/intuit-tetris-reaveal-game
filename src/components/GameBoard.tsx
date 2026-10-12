@@ -1,5 +1,6 @@
 import type { GameState, GameConfig } from '@/types';
 import { DEFAULT_BOARD_IMAGE_OPACITY, toCssOpacity } from '@/boardOpacity';
+import { HEAL_MS, LIFT_DELAY_MS } from '@/celebration';
 import { PieceTile } from './PieceTile';
 import { SPAWN_ROWS } from '@/gameLogic';
 
@@ -7,6 +8,8 @@ interface GameBoardProps {
   state: GameState;
   config: GameConfig;
   cellSize: number;
+  /** Plays the completion sequence: seams dissolve, then the board lifts. */
+  celebrating?: boolean;
 }
 
 /** Width of the white seams between tiles, matching the reference UI. */
@@ -18,7 +21,7 @@ const SEAM = 2;
  */
 export const BOARD_IMAGE_OPACITY = 0.25;
 
-export function GameBoard({ state, config, cellSize }: GameBoardProps) {
+export function GameBoard({ state, config, cellSize, celebrating = false }: GameBoardProps) {
   const { cols, rows } = config.difficulty;
   const imageUrl = config.image.url;
   const boardWidth = cols * cellSize;
@@ -40,12 +43,22 @@ export function GameBoard({ state, config, cellSize }: GameBoardProps) {
   return (
     <div
       className="relative select-none"
-      style={{ width: boardWidth, height: boardHeight + spawnHeight }}
+      style={{
+        width: boardWidth,
+        height: boardHeight + spawnHeight,
+        transform: celebrating ? 'scale(1.03)' : 'scale(1)',
+        transition: `transform 420ms cubic-bezier(0.22, 1, 0.36, 1) ${LIFT_DELAY_MS}ms`,
+      }}
     >
       {/* ---- Spawn zone: slightly lifted off the board so pieces read as "incoming" ---- */}
       <div
         className="absolute left-0 top-0 overflow-hidden bg-[#222020]"
-        style={{ width: boardWidth, height: spawnHeight }}
+        style={{
+          width: boardWidth,
+          height: spawnHeight,
+          opacity: celebrating ? 0 : 1,
+          transition: `opacity ${Math.round(HEAL_MS * 0.55)}ms ease-out`,
+        }}
       >
         <div
           className="absolute inset-0 opacity-70"
@@ -91,7 +104,10 @@ export function GameBoard({ state, config, cellSize }: GameBoardProps) {
                   width: cellSize,
                   height: cellSize,
                   // White seams drawn as insets keeps the grid crisp at any cell size.
-                  boxShadow: `inset 0 0 0 ${SEAM / 2}px #ffffff`,
+                  boxShadow: celebrating
+                    ? 'inset 0 0 0 0 rgba(255,255,255,0)'
+                    : `inset 0 0 0 ${SEAM / 2}px #ffffff`,
+                  transition: `box-shadow ${HEAL_MS}ms ease-out`,
                 }}
               >
                 {cellValue !== null && (() => {
@@ -110,6 +126,7 @@ export function GameBoard({ state, config, cellSize }: GameBoardProps) {
                       imageUrl={imageUrl}
                       bgSize={bgSize}
                       isPlaced
+                      seamless={celebrating}
                       className="h-full w-full"
                     />
                   );

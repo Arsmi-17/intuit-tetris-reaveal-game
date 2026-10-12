@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Share } from 'lucide-react';
-import type { GameConfig, GameState } from '@/types';
-import { generateFinishPoster } from '@/poster';
-import { logShareEvent } from '@/shareLog';
+import { useCallback, useState } from 'react';
+import { Download, Loader2 } from 'lucide-react';
+import type { GameState } from '@/types';
+import type { Poster } from '@/usePoster';
+import { logDownloadEvent } from '@/shareLog';
+// import { logShareEvent } from '@/shareLog';
 
 interface WinScreenProps {
-  config: GameConfig;
   state: GameState;
+  /** Rendered while the board was celebrating, so it is usually ready here. */
+  poster: Poster;
 }
 
 function formatTime(seconds: number): string {
@@ -15,56 +17,14 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-const HEADLINE = 'The Next level?';
-const SUBHEAD = ['That’s going to be', 'game-changing.'];
-const SLACK_CHANNEL_URL =
-  'https://intuit.enterprise.slack.com/?redir=%2Farchives%2FC0BHTGZSKDZ%3Fname%3DC0BHTGZSKDZ';
+// const SLACK_CHANNEL_URL =
+//   'https://intuit.enterprise.slack.com/?redir=%2Farchives%2FC0BHTGZSKDZ%3Fname%3DC0BHTGZSKDZ';
 
-export function WinScreen({ config, state }: WinScreenProps) {
-  const [revealed, setRevealed] = useState(false);
-  const [posterBlob, setPosterBlob] = useState<Blob | null>(null);
-  const [posterUrl, setPosterUrl] = useState<string | null>(null);
+export function WinScreen({ state, poster }: WinScreenProps) {
   const [shareStatus, setShareStatus] = useState('');
   const [isSharing, setIsSharing] = useState(false);
   const time = formatTime(state.elapsed);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setRevealed(true), 120);
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    let objectUrl: string | null = null;
-
-    setPosterBlob(null);
-    setPosterUrl(null);
-    setShareStatus('Generating poster...');
-
-    generateFinishPoster({
-      imageUrl: config.image.url,
-      imageLabel: config.image.label,
-      time,
-      headline: HEADLINE,
-      subhead: SUBHEAD,
-    })
-      .then((blob) => {
-        if (!active) return;
-        objectUrl = URL.createObjectURL(blob);
-        setPosterBlob(blob);
-        setPosterUrl(objectUrl);
-        setShareStatus('');
-      })
-      .catch((error) => {
-        if (!active) return;
-        setShareStatus(error instanceof Error ? error.message : 'Poster could not be generated.');
-      });
-
-    return () => {
-      active = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [config.image.label, config.image.url, time]);
+  const { blob: posterBlob, url: posterUrl, error: posterError } = poster;
 
   const posterFileName = `into-the-next-${time.replace(':', '-')}.png`;
 
@@ -82,44 +42,57 @@ export function WinScreen({ config, state }: WinScreenProps) {
     [posterFileName],
   );
 
-  /**
-   * A new tab keeps the poster page alive behind Slack. Popup blockers can
-   * refuse it after an await, so fall back to navigating this tab.
-   */
-  const openSlack = useCallback(() => {
-    const opened = window.open(SLACK_CHANNEL_URL, '_blank');
-    if (!opened) window.location.href = SLACK_CHANNEL_URL;
-  }, []);
-
-  /**
-   * Every device goes to the Slack channel. We deliberately do NOT use
-   * navigator.share: it opens the OS share sheet (WhatsApp, Instagram, Nearby
-   * Sharing...) and the poster belongs in one place.
-   */
-  const sharePoster = useCallback(async () => {
+  const downloadOnlyPoster = useCallback(async () => {
     if (!posterBlob || isSharing) return;
     setIsSharing(true);
-
-    // Fire-and-forget: logging must never delay or block the share.
-    void logShareEvent({ completionSeconds: state.elapsed, completionDisplay: time });
-
-    // Leave the poster somewhere it can be attached from, then open Slack.
-    try {
-      if ('ClipboardItem' in window && navigator.clipboard?.write) {
-        await navigator.clipboard.write([new ClipboardItem({ 'image/png': posterBlob })]);
-        setShareStatus('Poster copied. Paste it in Slack.');
-      } else {
-        downloadPoster(posterBlob);
-        setShareStatus('Poster saved. Attach it in Slack.');
-      }
-    } catch {
-      downloadPoster(posterBlob);
-      setShareStatus('Poster saved. Attach it in Slack.');
-    }
-
-    openSlack();
+    downloadPoster(posterBlob);
+    setShareStatus('');
+    const recorded = await logDownloadEvent({
+      completionSeconds: state.elapsed,
+      completionDisplay: time,
+    });
+    if (!recorded) setShareStatus('Could not record completion. Please try again.');
     setIsSharing(false);
-  }, [downloadPoster, isSharing, openSlack, posterBlob, state.elapsed, time]);
+  }, [downloadPoster, isSharing, posterBlob, state.elapsed, time]);
+
+  // /**
+  //  * A new tab keeps the poster page alive behind Slack. Popup blockers can
+  //  * refuse it after an await, so fall back to navigating this tab.
+  //  */
+  // const openSlack = useCallback(() => {
+  //   const opened = window.open(SLACK_CHANNEL_URL, '_blank');
+  //   if (!opened) window.location.href = SLACK_CHANNEL_URL;
+  // }, []);
+  //
+  // /**
+  //  * Every device goes to the Slack channel. We deliberately do NOT use
+  //  * navigator.share: it opens the OS share sheet (WhatsApp, Instagram, Nearby
+  //  * Sharing...) and the poster belongs in one place.
+  //  */
+  // const sharePoster = useCallback(async () => {
+  //   if (!posterBlob || isSharing) return;
+  //   setIsSharing(true);
+  //
+  //   // Fire-and-forget: logging must never delay or block the share.
+  //   void logShareEvent({ completionSeconds: state.elapsed, completionDisplay: time });
+  //
+  //   // Leave the poster somewhere it can be attached from, then open Slack.
+  //   try {
+  //     if ('ClipboardItem' in window && navigator.clipboard?.write) {
+  //       await navigator.clipboard.write([new ClipboardItem({ 'image/png': posterBlob })]);
+  //       setShareStatus('Poster copied. Paste it in Slack.');
+  //     } else {
+  //       downloadPoster(posterBlob);
+  //       setShareStatus('Poster saved. Attach it in Slack.');
+  //     }
+  //   } catch {
+  //     downloadPoster(posterBlob);
+  //     setShareStatus('Poster saved. Attach it in Slack.');
+  //   }
+  //
+  //   openSlack();
+  //   setIsSharing(false);
+  // }, [downloadPoster, isSharing, openSlack, posterBlob, state.elapsed, time]);
 
   return (
     <div className="relative min-h-[100dvh] w-full">
@@ -129,17 +102,17 @@ export function WinScreen({ config, state }: WinScreenProps) {
         {/* ---- The poster itself. Long-press / right-click saves this PNG. ---- */}
         <div className="order-2 flex min-h-0 w-full flex-1 items-center justify-center lg:order-1 lg:row-span-2 lg:block lg:flex-none">
           <div
-            className={`mx-auto w-full max-w-sm transition-all duration-700 lg:max-w-none ${
-              revealed ? 'scale-100 opacity-100' : 'scale-95 opacity-0'
-            }`}
-            style={{ maxHeight: '100%' }}
+            className="animate-rise-in mx-auto w-full max-w-sm lg:max-w-none"
+            style={{ maxHeight: '100%', animationDelay: '120ms' }}
           >
             {posterUrl ? (
-              <img
-                src={posterUrl}
-                alt={`Finish poster — completed in ${time}`}
-                className="poster-image mx-auto max-h-full w-auto max-w-full rounded-2xl object-contain shadow-card"
-              />
+              <div className="poster-shine relative mx-auto max-h-full w-fit overflow-hidden rounded-2xl">
+                <img
+                  src={posterUrl}
+                  alt={`Finish poster — completed in ${time}`}
+                  className="poster-image block max-h-full w-auto max-w-full object-contain shadow-card"
+                />
+              </div>
             ) : (
               <div className="aspect-square w-full animate-pulse rounded-2xl bg-white/50" />
             )}
@@ -147,7 +120,7 @@ export function WinScreen({ config, state }: WinScreenProps) {
         </div>
 
         {/* ---- Headline ---- */}
-        <header className="order-1 shrink-0 lg:order-2 lg:self-end">
+        <header className="animate-rise-in order-1 shrink-0 lg:order-2 lg:self-end">
           <h1 className="font-display text-[clamp(1.75rem,4.6vh,3rem)] font-bold leading-[1.05] tracking-tight text-brand-ink lg:text-6xl">
             Congra<span className="text-brand-blue">tulations!</span>
           </h1>
@@ -157,18 +130,27 @@ export function WinScreen({ config, state }: WinScreenProps) {
         </header>
 
         {/* ---- Stats + actions ---- */}
-        <div className="order-3 mt-[clamp(0.6rem,2vh,1.75rem)] w-full shrink-0 lg:mt-0 lg:self-start">
+        <div
+          className="animate-rise-in order-3 mt-[clamp(0.6rem,2vh,1.75rem)] w-full shrink-0 lg:mt-0 lg:self-start"
+          style={{ animationDelay: '260ms' }}
+        >
           <button
-            onClick={sharePoster}
+            onClick={downloadOnlyPoster}
             disabled={!posterBlob || isSharing}
             className="inline-flex w-full items-center justify-center gap-3 rounded-full bg-brand-blue px-8 py-[clamp(0.7rem,2vh,1.25rem)] text-[clamp(1rem,2.4vh,1.25rem)] font-medium text-white shadow-cta transition hover:bg-brand-blue-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-blue active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Share Poster
-            <Share className="h-5 w-5" strokeWidth={2.25} />
+            {posterBlob ? 'Download' : 'Preparing poster'}
+            {posterBlob && !isSharing ? (
+              <Download className="h-5 w-5" strokeWidth={2.25} />
+            ) : (
+              <Loader2 className="h-5 w-5 animate-spin" strokeWidth={2.25} />
+            )}
           </button>
 
           <p className="mt-[clamp(0.5rem,1.6vh,1.25rem)] text-center text-[clamp(0.75rem,1.7vh,0.875rem)] text-brand-body">
-            First 50 to complete and share earn Buzzbox points.
+            Share your completed image on #watercooler-ban
+            <br />
+            First 50 to complete earn Buzzbox points.
           </p>
 
           <div
@@ -176,7 +158,7 @@ export function WinScreen({ config, state }: WinScreenProps) {
             role="status"
             aria-live="polite"
           >
-            {shareStatus}
+            {shareStatus || posterError}
           </div>
 
           <div className="mt-[clamp(0.5rem,2vh,1.75rem)] flex justify-center">

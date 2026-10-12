@@ -11,10 +11,13 @@ import {
 import type { GameConfig, GameState } from '@/types';
 import { GameBoard } from './GameBoard';
 import { SPAWN_ROWS } from '@/gameLogic';
+import { CELEBRATION_MS, HEAL_MS } from '@/celebration';
 
 interface GameScreenProps {
   config: GameConfig;
   state: GameState;
+  /** Plays the completion sequence before the win screen takes over. */
+  celebrating?: boolean;
   onMoveLeft: () => void;
   onMoveRight: () => void;
   onMoveDown: () => void;
@@ -69,6 +72,7 @@ function useCellSize(cols: number, rows: number) {
 export function GameScreen({
   config,
   state,
+  celebrating = false,
   onMoveLeft,
   onMoveRight,
   onMoveDown,
@@ -91,17 +95,22 @@ export function GameScreen({
   }, []);
 
   const padBtn =
-    'flex aspect-square w-full max-w-[5.5rem] items-center justify-center rounded-2xl bg-white text-brand-blue shadow-card transition hover:bg-white/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue active:scale-95 disabled:opacity-40';
+    'pad-button relative overflow-hidden flex aspect-square w-full max-w-[5.5rem] items-center justify-center rounded-2xl bg-white text-brand-blue shadow-card transition hover:bg-white/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue active:scale-95 disabled:opacity-40';
 
   return (
-    <div className="relative min-h-[100dvh] w-full">
+    <div
+      className={`relative min-h-[100dvh] w-full ${celebrating ? 'animate-screen-dissolve' : ''}`}
+      style={{ ['--celebration-ms' as string]: `${CELEBRATION_MS}ms` }}
+    >
       <div className="brand-backdrop" aria-hidden="true" />
 
       <div className="relative z-10 mx-auto flex h-[100dvh] w-full max-w-md flex-col gap-3 px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-4 sm:gap-4 sm:px-6 lg:max-w-xl lg:gap-5 lg:py-8">
         {/* ---- Header ---- */}
         <header
-          style={rail}
-          className="mx-auto flex w-full shrink-0 items-center justify-between rounded-2xl bg-brand-mist px-5 py-4 shadow-card sm:px-6"
+          style={{ ...rail, transition: `opacity ${HEAL_MS}ms ease-out` }}
+          className={`mx-auto flex w-full shrink-0 items-center justify-between rounded-2xl bg-brand-mist px-5 py-4 shadow-card sm:px-6 ${
+            celebrating ? 'opacity-0' : 'opacity-100'
+          }`}
         >
           <img src="/assets/intuit-logo.png" alt="Intuit" className="h-7 w-auto sm:h-8" />
 
@@ -126,14 +135,16 @@ export function GameScreen({
         {/* ---- Board ---- */}
         <div ref={areaRef} className="flex min-h-0 flex-1 items-center justify-center">
           {cellSize > 0 && (
-            <GameBoard state={state} config={config} cellSize={cellSize} />
+            <GameBoard state={state} config={config} cellSize={cellSize} celebrating={celebrating} />
           )}
         </div>
 
         {/* ---- D-pad ---- */}
         <div
-          style={rail}
-          className="mx-auto flex w-full shrink-0 items-stretch justify-center gap-3 sm:gap-4"
+          style={{ ...rail, transition: `opacity ${HEAL_MS}ms ease-out` }}
+          className={`mx-auto flex w-full shrink-0 items-stretch justify-center gap-3 sm:gap-4 ${
+            celebrating ? 'pointer-events-none opacity-0' : 'opacity-100'
+          }`}
         >
           <button onClick={onMoveLeft} className={padBtn} aria-label="Move left">
             <ArrowLeft className="h-8 w-8 sm:h-9 sm:w-9" strokeWidth={2.25} />

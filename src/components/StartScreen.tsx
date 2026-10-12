@@ -1,7 +1,9 @@
+import { useCallback, useState } from 'react';
 import { ArrowRight, ChevronsDown, Clock, MoveHorizontal, ArrowDown } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { PUZZLE_IMAGES, DIFFICULTIES } from '@/gameLogic';
 import type { GameConfig } from '@/types';
+import { prefersReducedMotion } from '@/celebration';
 
 interface StartScreenProps {
   onStart: (config: GameConfig) => void;
@@ -36,14 +38,24 @@ const INSTRUCTIONS: Instruction[] = [
   },
 ];
 
+/** Must match the screen-exit animation in index.css. */
+const EXIT_MS = 300;
+
 export function StartScreen({ onStart }: StartScreenProps) {
-  const defaultConfig: GameConfig = {
-    image: PUZZLE_IMAGES[0],
-    difficulty: DIFFICULTIES.hard,
-  };
+  const [leaving, setLeaving] = useState(false);
+
+  const handlePlay = useCallback(() => {
+    if (leaving) return;
+    setLeaving(true);
+    // Let the screen clear before the board replaces it.
+    window.setTimeout(
+      () => onStart({ image: PUZZLE_IMAGES[0], difficulty: DIFFICULTIES.hard }),
+      prefersReducedMotion() ? 0 : EXIT_MS,
+    );
+  }, [leaving, onStart]);
 
   return (
-    <div className="relative min-h-[100dvh] w-full">
+    <div className={`relative min-h-[100dvh] w-full ${leaving ? 'animate-screen-exit' : ''}`}>
       <div className="brand-backdrop" aria-hidden="true" />
 
       {/*
@@ -87,7 +99,7 @@ export function StartScreen({ onStart }: StartScreenProps) {
 
           {/* Desktop CTA sits with the hero; mobile CTA is pinned below the list. */}
           <button
-            onClick={() => onStart(defaultConfig)}
+            onClick={handlePlay}
             className="mt-10 hidden w-full max-w-sm items-center justify-center gap-3 rounded-full bg-brand-blue px-8 py-5 text-xl font-medium text-white shadow-cta transition hover:bg-brand-blue-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-blue active:scale-[0.98] lg:inline-flex"
           >
             Let&rsquo;s Play
@@ -126,7 +138,7 @@ export function StartScreen({ onStart }: StartScreenProps) {
           </ul>
 
           <button
-            onClick={() => onStart(defaultConfig)}
+            onClick={handlePlay}
             className="mt-[clamp(0.6rem,2vh,2rem)] inline-flex w-full shrink-0 items-center justify-center gap-3 rounded-full bg-brand-blue px-8 py-[clamp(0.7rem,2vh,1.25rem)] text-[clamp(1rem,2.4vh,1.25rem)] font-medium text-white shadow-cta transition hover:bg-brand-blue-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-blue active:scale-[0.98] lg:hidden"
           >
             Let&rsquo;s Play

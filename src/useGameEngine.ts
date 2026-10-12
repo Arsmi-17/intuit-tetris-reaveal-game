@@ -87,6 +87,91 @@ function cloneState(state: GameState): GameState {
   };
 }
 
+function targetCells(target: PieceTarget): { col: number; row: number }[] {
+  return target.cells.map((cell) => ({
+    col: target.col + cell.x,
+    row: target.row + cell.y,
+  }));
+}
+
+function canReachTarget(
+  piece: Piece,
+  board: (number | null)[][],
+  targets: Map<number, PieceTarget>,
+  rows: number,
+): boolean {
+  const target = targets.get(piece.id);
+  if (!target) return false;
+
+  const cells = targetCells(target);
+  const ownCells = new Set(cells.map((cell) => `${cell.col},${cell.row}`));
+
+  for (const cell of cells) {
+    if (board[cell.row]?.[cell.col] !== null) return false;
+
+    for (let row = 0; row < cell.row; row += 1) {
+      if (board[row]?.[cell.col] !== null) return false;
+    }
+  }
+
+  return cells.some((cell) => {
+    const rowBelow = cell.row + 1;
+    return (
+      rowBelow >= rows ||
+      (!ownCells.has(`${cell.col},${rowBelow}`) && board[rowBelow]?.[cell.col] !== null)
+    );
+  });
+}
+
+function placeTargetOnBoard(
+  piece: Piece,
+  board: (number | null)[][],
+  targets: Map<number, PieceTarget>,
+): boolean {
+  const target = targets.get(piece.id);
+  if (!target) return false;
+
+  for (const cell of targetCells(target)) {
+    if (!board[cell.row] || board[cell.row][cell.col] !== null) return false;
+    board[cell.row][cell.col] = piece.id;
+  }
+
+  return true;
+}
+
+function canPlayQueueInOrder(state: GameState, queue: Piece[], rows: number): boolean {
+  const simulatedBoard = state.board.map((row) => [...row]);
+
+  for (const piece of queue) {
+    if (
+      !canReachTarget(piece, simulatedBoard, state.targets, rows) ||
+      !placeTargetOnBoard(piece, simulatedBoard, state.targets)
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function planRetryQueue(state: GameState, retryPiece: Piece, maxDelay: number, rows: number): Piece[] {
+  const maxSafeDelay = Math.min(maxDelay, state.nextPieces.length);
+
+  for (let delay = maxSafeDelay; delay > 0; delay -= 1) {
+    const candidateQueue = [
+      ...state.nextPieces.slice(0, delay),
+      retryPiece,
+      ...state.nextPieces.slice(delay),
+    ];
+
+    if (canPlayQueueInOrder(state, candidateQueue, rows)) {
+      return candidateQueue;
+    }
+  }
+
+  return [retryPiece, ...state.nextPieces];
+}
+
 export interface GameEngine {
   state: GameState;
   moveLeft: () => void;
@@ -117,6 +202,10 @@ export function useGameEngine(config: GameConfig | null): GameEngine {
     if (!config) {
       setState(null);
       return;
+    }
+    if (flashTimerRef.current) {
+      clearTimeout(flashTimerRef.current);
+      flashTimerRef.current = null;
     }
     configRef.current = config;
     setState(initGame(config));
@@ -186,7 +275,9 @@ export function useGameEngine(config: GameConfig | null): GameEngine {
         row: 0,
       };
 
-      // Let the rejected piece blink out, then spawn the retry piece
+      newState.nextPieces = planRetryQueue(newState, retryPiece, 2, rows);
+
+      // Let the rejected piece blink out, then continue with the queue.
       if (flashTimerRef.current) {
         clearTimeout(flashTimerRef.current);
       }
@@ -195,10 +286,7 @@ export function useGameEngine(config: GameConfig | null): GameEngine {
           if (!prev) return prev;
           if (!configRef.current) return prev;
           const cleared = { ...prev, wrongFlash: false, rejectedPiece: null };
-          return {
-            ...cleared,
-            currentPiece: spawnPiece(retryPiece, configRef.current.difficulty.cols),
-          };
+          return spawnNext(cleared);
         });
       }, 900);
 
@@ -324,6 +412,10 @@ export function useGameEngine(config: GameConfig | null): GameEngine {
   // Reset
   const reset = useCallback(() => {
     if (configRef.current) {
+      if (flashTimerRef.current) {
+        clearTimeout(flashTimerRef.current);
+        flashTimerRef.current = null;
+      }
       setState(initGame(configRef.current));
     }
   }, []);

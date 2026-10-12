@@ -11,6 +11,8 @@ interface PieceTileProps {
   isWrong?: boolean;
   /** Whether this tile is correctly placed. */
   isPlaced?: boolean;
+  /** Drops the hairline ring so placed tiles merge into one picture. */
+  seamless?: boolean;
   /** Optional className for custom sizing. */
   className?: string;
 }
@@ -26,6 +28,7 @@ export function PieceTile({
   isFalling = false,
   isWrong = false,
   isPlaced = false,
+  seamless = false,
   className = '',
 }: PieceTileProps) {
   const baseStyle: React.CSSProperties = {
@@ -38,14 +41,16 @@ export function PieceTile({
   if (isWrong) {
     stateClasses = 'z-20 animate-shake ring-2 ring-inset ring-brand-coral';
   } else if (isPlaced) {
-    stateClasses = 'ring-1 ring-inset ring-white';
+    stateClasses = seamless ? 'ring-0' : 'ring-1 ring-inset ring-white';
   } else if (isFalling) {
     stateClasses = 'z-20 ring-2 ring-inset ring-white shadow-lg shadow-black/25';
   }
 
   return (
     <div
-      className={`relative overflow-hidden transition-all duration-150 ${stateClasses} ${className}`}
+      className={`relative overflow-hidden ${
+        seamless ? 'transition-shadow duration-[600ms] ease-out' : 'transition-all duration-150'
+      } ${stateClasses} ${className}`}
       style={baseStyle}
     />
   );

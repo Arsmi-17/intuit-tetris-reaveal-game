@@ -4,7 +4,15 @@ import { GameScreen } from '@/components/GameScreen';
 import { WinScreen } from '@/components/WinScreen';
 import { OpacityScreen } from '@/components/OpacityScreen';
 import { useGameEngine } from '@/useGameEngine';
-import type { GameConfig, GameScreen as ScreenType, GameState } from '@/types';
+import { usePoster } from '@/usePoster';
+import { CELEBRATION_MS, prefersReducedMotion } from '@/celebration';
+import type { GameConfig, GameState } from '@/types';
+
+/**
+ * 'celebrating' is the beat between the last tile landing and the win screen:
+ * the board heals and lifts while the poster renders in the background.
+ */
+type Phase = 'start' | 'playing' | 'celebrating' | 'won';
 
 /**
  * The game is a state machine rather than a set of pages, so the only real
@@ -25,23 +33,39 @@ function usePathname(): string {
   return pathname;
 }
 
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 function App() {
   const pathname = usePathname();
-  const [screen, setScreen] = useState<ScreenType>('start');
+  const [phase, setPhase] = useState<Phase>('start');
   const [config, setConfig] = useState<GameConfig | null>(null);
   const [completedState, setCompletedState] = useState<GameState | null>(null);
 
-  const engine = useGameEngine(screen === 'playing' ? config : null);
+  const engine = useGameEngine(phase === 'playing' || phase === 'celebrating' ? config : null);
+
+  const finishedState = completedState ?? engine.state;
+
+  // Start rendering the poster as soon as the board is finished, so the
+  // celebration covers the work instead of the player waiting on a placeholder.
+  const poster = usePoster(
+    config,
+    formatTime(finishedState.elapsed),
+    phase === 'celebrating' || phase === 'won',
+  );
 
   const handleStart = useCallback((cfg: GameConfig) => {
     setCompletedState(null);
     setConfig(cfg);
-    setScreen('playing');
+    setPhase('playing');
   }, []);
 
   const handleHome = useCallback(() => {
     setCompletedState(null);
-    setScreen('start');
+    setPhase('start');
     setConfig(null);
   }, []);
 
@@ -51,24 +75,32 @@ function App() {
 
   // Auto-detect win — must be in an effect, not during render
   useEffect(() => {
-    if (screen === 'playing' && engine.state.won) {
+    if (phase === 'playing' && engine.state.won) {
       setCompletedState(engine.state);
-      setScreen('won');
+      setPhase('celebrating');
     }
-  }, [screen, engine.state]);
+  }, [phase, engine.state]);
+
+  // Hand over to the win screen once the board has finished its sequence.
+  useEffect(() => {
+    if (phase !== 'celebrating') return;
+    const timer = window.setTimeout(
+      () => setPhase('won'),
+      prefersReducedMotion() ? 0 : CELEBRATION_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [phase]);
 
   if (pathname.replace(/\/+$/, '') === '/opacity') {
     return <OpacityScreen />;
   }
 
-  if (screen === 'start' || !config) {
+  if (phase === 'start' || !config) {
     return <StartScreen onStart={handleStart} />;
   }
 
-  if (screen === 'won') {
-    return (
-      <WinScreen config={config} state={completedState ?? engine.state} />
-    );
+  if (phase === 'won') {
+    return <WinScreen state={finishedState} poster={poster} />;
   }
 
   // Don't render GameScreen until the engine has initialized the board
@@ -88,6 +120,7 @@ function App() {
     <GameScreen
       config={config}
       state={engine.state}
+      celebrating={phase === 'celebrating'}
       onMoveLeft={engine.moveLeft}
       onMoveRight={engine.moveRight}
       onMoveDown={engine.moveDown}
